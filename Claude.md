@@ -138,6 +138,72 @@ class UserSubscriptionModel:
    - 保存済みの`stripe_customer_id`を`customer`パラメータに設定
    - 既存の顧客情報を再利用
 
+## 初回購入フローの詳細
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザー
+    participant W as カーリルWeb
+    participant S as web-subscription<br/>(Flask/Cloud Run)
+    participant DS as Cloud Datastore
+    participant ST as Stripe
+    participant W3 as web3<br/>(App Engine)
+
+    Note over U,W3: 1. プラン選択
+    U->>W: プラン選択ページアクセス
+    W->>U: 3つのプラン表示<br/>(Basic/Standard/Pro)
+    U->>W: プラン選択（例：Basic）
+
+    Note over U,W3: 2. Checkout Session作成
+    W->>S: POST /api/create-checkout-session<br/>{plan_id: "basic", cuid: "xxx"}
+    S->>DS: UserSubscription確認<br/>(既存顧客かチェック)
+    DS-->>S: 既存レコードなし
+
+    S->>ST: stripe.checkout.Session.create()<br/>- price_id: BASIC価格ID<br/>- customer_creation: 'always'<br/>- client_reference_id: CUID<br/>- customer_email: user@example.com
+    ST-->>S: Checkout Session URL
+    S-->>W: {checkout_url: "https://checkout.stripe.com/xxx"}
+    W->>U: Stripeチェックアウトへリダイレクト
+
+    Note over U,W3: 3. 支払い処理
+    U->>ST: カード情報入力・決済
+    ST->>ST: 顧客作成 (cus_xxx)
+    ST->>ST: サブスクリプション作成 (sub_xxx)
+    ST-->>U: 決済成功画面
+
+    Note over U,W3: 4. Webhook処理
+    ST->>S: POST /api/stripe-webhook<br/>Event: checkout.session.completed
+    S->>S: Webhook署名検証
+    S->>DS: UserSubscription作成/更新<br/>- stripe_customer_id<br/>- stripe_subscription_id<br/>- plan_name: "Basic"<br/>- subscription_status: "active"
+    DS-->>S: 保存完了
+
+    S->>W3: API呼び出し<br/>UserStat.plan_id更新
+    W3->>W3: plan_id = "Basic"
+    W3-->>S: 更新完了
+    S-->>ST: HTTP 200 OK
+
+    Note over U,W3: 5. 利用開始
+    U->>W: マイページへ戻る
+    W->>S: GET /api/subscription-status<br/>{cuid: "xxx"}
+    S->>DS: UserSubscription取得
+    DS-->>S: サブスクリプション情報
+    S-->>W: {status: "active", plan: "Basic", next_billing: "2025-11-02"}
+    W->>U: サブスクリプション状態表示
+
+    Note over U,W3: 6. MCPサーバー利用
+    U->>W3: MCPサーバーAPI呼び出し
+    W3->>W3: plan_idチェック<br/>(Basic = 利用上限アップ)
+    W3-->>U: APIレスポンス<br/>(プレミアム機能利用可)
+```
+
+### フロー補足説明
+
+1. **プラン選択**: ユーザーがカーリルのWebサイトで3つのプランから選択
+2. **Checkout Session作成**: Flask APIがStripeのCheckout Sessionを作成し、顧客情報を紐付け
+3. **支払い処理**: ユーザーがStripeのチェックアウト画面でカード情報を入力
+4. **Webhook処理**: 決済成功後、StripeからWebhookを受信してデータベース更新
+5. **利用開始**: ユーザーがマイページでサブスクリプション状態を確認
+6. **MCPサーバー利用**: プレミアム機能が利用可能になる
+
 ## Stripe Webhook処理
 
 ### 処理するイベント
