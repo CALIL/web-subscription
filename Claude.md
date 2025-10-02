@@ -143,32 +143,30 @@ class UserSubscriptionModel:
 ```mermaid
 sequenceDiagram
     participant U as ユーザー
-    participant W as カーリルWeb
-    participant S as web-subscription<br/>(Flask/Cloud Run)
+    participant S as web-subscription<br/>(Flask/Cloud Run)<br/>calil.jp/subscription
     participant DS as Cloud Datastore
     participant ST as Stripe
     participant W3 as web3<br/>(App Engine)
 
     Note over U,W3: 1. プラン選択
-    U->>W: プラン選択ページアクセス
-    W->>U: 3つのプラン表示<br/>(Basic/Standard/Pro)
-    U->>W: プラン選択（例：Basic）
+    U->>S: GET calil.jp/subscription
+    S->>S: プラン選択ページ生成
+    S-->>U: 3つのプラン表示<br/>(Basic/Standard/Pro)
+    U->>S: プラン選択（例：Basic）
 
     Note over U,W3: 2. Checkout Session作成
-    W->>S: POST /api/create-checkout-session<br/>{plan_id: "basic", cuid: "xxx"}
     S->>DS: UserSubscription確認<br/>(既存顧客かチェック)
     DS-->>S: 既存レコードなし
 
     S->>ST: stripe.checkout.Session.create()<br/>- price_id: BASIC価格ID<br/>- customer_creation: 'always'<br/>- client_reference_id: CUID<br/>- customer_email: user@example.com
     ST-->>S: Checkout Session URL
-    S-->>W: {checkout_url: "https://checkout.stripe.com/xxx"}
-    W->>U: Stripeチェックアウトへリダイレクト
+    S->>U: Stripeチェックアウトへリダイレクト
 
     Note over U,W3: 3. 支払い処理
     U->>ST: カード情報入力・決済
     ST->>ST: 顧客作成 (cus_xxx)
     ST->>ST: サブスクリプション作成 (sub_xxx)
-    ST-->>U: 決済成功画面
+    ST-->>U: 決済成功画面<br/>calil.jp/subscription/successへリダイレクト
 
     Note over U,W3: 4. Webhook処理
     ST->>S: POST /api/stripe-webhook<br/>Event: checkout.session.completed
@@ -182,27 +180,19 @@ sequenceDiagram
     S-->>ST: HTTP 200 OK
 
     Note over U,W3: 5. 利用開始
-    U->>W: マイページへ戻る
-    W->>S: GET /api/subscription-status<br/>{cuid: "xxx"}
+    U->>S: GET calil.jp/subscription/success
     S->>DS: UserSubscription取得
     DS-->>S: サブスクリプション情報
-    S-->>W: {status: "active", plan: "Basic", next_billing: "2025-11-02"}
-    W->>U: サブスクリプション状態表示
-
-    Note over U,W3: 6. MCPサーバー利用
-    U->>W3: MCPサーバーAPI呼び出し
-    W3->>W3: plan_idチェック<br/>(Basic = 利用上限アップ)
-    W3-->>U: APIレスポンス<br/>(プレミアム機能利用可)
+    S-->>U: 購入完了画面<br/>プラン: Basic<br/>次回請求日: 2025-11-02
 ```
 
 ### フロー補足説明
 
-1. **プラン選択**: ユーザーがカーリルのWebサイトで3つのプランから選択
+1. **プラン選択**: calil.jp/subscriptionでプラン選択ページを表示（reverse-proxy経由）
 2. **Checkout Session作成**: Flask APIがStripeのCheckout Sessionを作成し、顧客情報を紐付け
 3. **支払い処理**: ユーザーがStripeのチェックアウト画面でカード情報を入力
-4. **Webhook処理**: 決済成功後、StripeからWebhookを受信してデータベース更新
-5. **利用開始**: ユーザーがマイページでサブスクリプション状態を確認
-6. **MCPサーバー利用**: プレミアム機能が利用可能になる
+4. **Webhook処理**: 決済成功後、StripeからWebhookを受信してデータベース更新、web3のUserStatも更新
+5. **利用開始**: 購入完了画面でサブスクリプション状態を確認
 
 ## Stripe Webhook処理
 
