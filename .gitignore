@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Google Cloud
+*.json
+!package.json
+!package-lock.json
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# Local development
+*.db
+*.sqlite
+*.sqlite3
