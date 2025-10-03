@@ -84,8 +84,8 @@ APP_ENV=development                       # 開発環境（APIドキュメント
 
 #### 新規モデル: UserSubscription (Cloud Firestore)
 
-**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）
-**実装場所**: web-subscriptionリポジトリ（Cloud Run上で動作）
+**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）  
+**実装場所**: web-subscriptionリポジトリ（Cloud Run上で動作）  
 **データベース選択の理由**:
 - web3とは独立したマイクロサービスとして構築
 - Firestoreのリアルタイム同期機能を将来的に活用予定
@@ -185,6 +185,8 @@ class UserSubscriptionModel:
 1. **初回購入時**:
    - `customer_creation='always'`で自動的にStripe顧客を作成
    - `customer_email`にカーリルのユーザーメールを設定
+      - 空白にした場合、(Stripe側でユーザーにメールアドレスを尋ねる)[https://docs.stripe.com/api/checkout/sessions/object?api-version=2025-09-30.preview]
+      - カーリルのemailが未検証の場合、どうするかは最後に調整
    - `client_reference_id`にCUIDを設定
 
 2. **再購入時**:
