@@ -106,13 +106,13 @@ APP_ENV=development                       # 開発環境（APIドキュメント
 
 ### UserStatモデルへの追加（web3リポジトリ側）
 
-既存のweb3リポジトリ（**Cloud Datastore使用**）のUserStatモデルに以下のプロパティを追加:
+既存の[web3リポジトリ](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
 - `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
 ### 新規モデル: UserSubscription (Cloud Firestore)
 
-**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）
-**実装場所**: `app/models/subscription.py`
+**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）  
+**実装場所**: `app/models/subscription.py`  
 **注意**: web3（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
 
 **フィールド構成**:
@@ -145,11 +145,11 @@ APP_ENV=development                       # 開発環境（APIドキュメント
 ## APIエンドポイント
 
 `app/main.py`に実装するエンドポイント：
-- `GET /` - プラン選択画面
-- `POST /api/create-checkout-session` - Checkout Session作成
-- `POST /api/stripe-webhook` - Webhook受信
-- `POST /api/create-portal-session` - Customer Portal URL生成
-- `GET /success` - 購入完了画面
+- `GET /subscription` - プラン選択画面
+- `POST /subscription/api/create-checkout-session` - Checkout Session作成
+- `POST /subscription/api/stripe-webhook` - Webhook受信
+- `POST /subscription/api/create-portal-session` - Customer Portal URL生成
+- `GET /subscription/success` - 購入完了画面
 
 ## Stripe顧客管理
 
