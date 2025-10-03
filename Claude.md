@@ -77,34 +77,40 @@ APP_ENV=development                       # 開発環境（APIドキュメント
 
 ## データモデル設計
 
-### UserStatモデルへの追加
+### UserStatモデルへの追加（web3リポジトリ側）
 
-既存のweb3リポジトリのUserStatモデルに以下のプロパティを追加:
+既存のweb3リポジトリ（**Cloud Datastore使用**）のUserStatモデルに以下のプロパティを追加:
 - `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
-#### 新規モデル: UserSubscription (Cloud Datastore)
+#### 新規モデル: UserSubscription (Cloud Firestore)
 
-**管理方針**: 1ユーザーにつき1レコード（再購入時は既存レコードを更新）
+**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）
 **実装場所**: web-subscriptionリポジトリ（Cloud Run上で動作）
+**データベース選択の理由**:
+- web3とは独立したマイクロサービスとして構築
+- Firestoreのリアルタイム同期機能を将来的に活用予定
+- **注意**: web3（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
 
 ```python
-from google.cloud import datastore
+from google.cloud import firestore
 from datetime import datetime
 
 class UserSubscriptionModel:
-    """Google Cloud Datastoreを使用したUserSubscriptionモデル"""
+    """Google Cloud Firestoreを使用したUserSubscriptionモデル"""
 
-    KIND = 'UserSubscription'
+    COLLECTION = 'user_subscriptions'
 
     @classmethod
-    def create_or_update(cls, client: datastore.Client, data: dict):
-        """UserSubscriptionエンティティの作成または更新"""
-        # cuidをキーとして使用
-        key = client.key(cls.KIND, data['cuid'])
-        entity = datastore.Entity(key=key)
+    def create_or_update(cls, db: firestore.Client, data: dict):
+        """UserSubscriptionドキュメントの作成または更新"""
+        # cuidをドキュメントIDとして使用
+        doc_ref = db.collection(cls.COLLECTION).document(data['cuid'])
 
-        # エンティティのプロパティを設定
-        entity.update({
+        # ドキュメントの存在確認
+        doc = doc_ref.get()
+
+        # ドキュメントのデータを設定
+        doc_data = {
             # ユーザー情報
             'user_cuid': data.get('cuid'),  # UserStatとの紐付け用
 
@@ -132,29 +138,33 @@ class UserSubscriptionModel:
             'current_period_end': data.get('current_period_end'),
 
             # メタ情報
-            'updated': datetime.now()  # レコード更新日
-        })
+            'updated': firestore.SERVER_TIMESTAMP  # レコード更新日
+        }
 
         # 新規作成時のみcreatedを設定
-        if not client.get(key):
-            entity['created'] = datetime.now()
+        if not doc.exists:
+            doc_data['created'] = firestore.SERVER_TIMESTAMP
 
-        client.put(entity)
-        return entity
-
-    @classmethod
-    def get_by_cuid(cls, client: datastore.Client, cuid: str):
-        """CUIDによるUserSubscriptionエンティティの取得"""
-        key = client.key(cls.KIND, cuid)
-        return client.get(key)
+        doc_ref.set(doc_data, merge=True)
+        return doc_ref.get()
 
     @classmethod
-    def get_by_stripe_customer_id(cls, client: datastore.Client, stripe_customer_id: str):
-        """Stripe顧客IDによるUserSubscriptionエンティティの取得"""
-        query = client.query(kind=cls.KIND)
-        query.add_filter('stripe_customer_id', '=', stripe_customer_id)
-        results = list(query.fetch(limit=1))
-        return results[0] if results else None
+    def get_by_cuid(cls, db: firestore.Client, cuid: str):
+        """CUIDによるUserSubscriptionドキュメントの取得"""
+        doc_ref = db.collection(cls.COLLECTION).document(cuid)
+        doc = doc_ref.get()
+        return doc.to_dict() if doc.exists else None
+
+    @classmethod
+    def get_by_stripe_customer_id(cls, db: firestore.Client, stripe_customer_id: str):
+        """Stripe顧客IDによるUserSubscriptionドキュメントの取得"""
+        docs = db.collection(cls.COLLECTION).where(
+            'stripe_customer_id', '==', stripe_customer_id
+        ).limit(1).stream()
+
+        for doc in docs:
+            return doc.to_dict()
+        return None
 ```
 
 ## コントローラー実装
@@ -191,8 +201,8 @@ class UserSubscriptionModel:
 ```mermaid
 sequenceDiagram
     participant U as ユーザー
-    participant S as web-subscription<br/>(Fast API/Cloud Run)<br/>calil.jp/subscription
-    participant DS as Cloud Datastore
+    participant S as web-subscription<br/>(FastAPI/Cloud Run)<br/>calil.jp/subscription
+    participant DS as Cloud Firestore
     participant ST as Stripe
     participant W3 as web3<br/>(App Engine)
 
@@ -216,16 +226,22 @@ sequenceDiagram
     ST->>ST: サブスクリプション作成 (sub_xxx)
     ST-->>U: 決済成功画面<br/>calil.jp/subscription/successへリダイレクト
 
-    Note over U,W3: 4. Webhook処理
+    Note over U,W3: 4. Webhook処理（順次更新）
     ST->>S: POST /api/stripe-webhook<br/>Event: checkout.session.completed
     S->>S: Webhook署名検証
     S->>DS: UserSubscription作成/更新<br/>- stripe_customer_id<br/>- stripe_subscription_id<br/>- plan_name: "Basic"<br/>- subscription_status: "active"
-    DS-->>S: 保存完了
+    DS-->>S: Firestore保存完了
 
+    Note over S,W3: トランザクション不可のため順次更新
     S->>W3: API呼び出し<br/>UserStat.plan_id更新
-    W3->>W3: plan_id = "Basic"
-    W3-->>S: 更新完了
-    S-->>ST: HTTP 200 OK
+    alt API呼び出し成功
+        W3->>W3: plan_id = "Basic" (Datastore更新)
+        W3-->>S: 更新完了
+        S-->>ST: HTTP 200 OK
+    else API呼び出し失敗
+        W3-->>S: エラー応答
+        S-->>ST: HTTP 500 (Stripeが自動リトライ)
+    end
 
     Note over U,W3: 5. 利用開始
     U->>S: GET calil.jp/subscription/success
@@ -237,7 +253,7 @@ sequenceDiagram
 ### フロー補足説明
 
 1. **プラン選択**: calil.jp/subscriptionでプラン選択ページを表示（reverse-proxy経由）
-2. **Checkout Session作成**: Fast APIがStripeのCheckout Sessionを作成し、顧客情報を紐付け
+2. **Checkout Session作成**: FastAPI APIがStripeのCheckout Sessionを作成し、顧客情報を紐付け
 3. **支払い処理**: ユーザーがStripeのチェックアウト画面でカード情報を入力
 4. **Webhook処理**: 決済成功後、StripeからWebhookを受信してデータベース更新、web3のUserStatも更新
 5. **利用開始**: 購入完了画面でサブスクリプション状態を確認
@@ -252,9 +268,32 @@ sequenceDiagram
 - `invoice.payment_succeeded`: 更新決済成功
 - `invoice.payment_failed`: 支払い失敗
 
-## 既存APIの拡張
+## web3側で必要なAPI実装
 
-### infrastructure/get_userstat
+### 新規API: infrastructure/update_user_plan
+**エンドポイント**: POST /api/infrastructure/update_user_plan
+**認証**: INFRASTRUCTURE_API_PASSWORD必須
+**リクエストボディ**:
+```json
+{
+  "cuid": "user_cuid_here",
+  "plan_id": "Basic"  // 'Basic'/'Standard'/'Pro' または空文字
+}
+```
+**レスポンス**:
+```json
+{
+  "success": true,
+  "cuid": "user_cuid_here",
+  "plan_id": "Basic"
+}
+```
+**実装内容**:
+- UserStatエンティティの`plan_id`フィールドを更新
+- 存在しないユーザーの場合は404エラー
+- 更新失敗時は500エラー
+
+### 既存API: infrastructure/get_userstat
 返却JSONに以下のフィールドを追加:
 
 - `plan_id`: プラン名（'Basic'/'Standard'/'Pro'、未契約は空文字）
@@ -277,10 +316,10 @@ env_variables:
 1. **Phase 1: 基盤構築**
    - プロジェクトセットアップ
      - `uv init`でPython 3.13プロジェクト初期化
-     - `uv add fast-api google-cloud-datastore stripe`で依存関係追加
+     - `uv add fastapi[standard] google-cloud-firestore stripe`で依存関係追加
    - Google Cloud設定
      - サービスアカウント作成と認証設定
-     - Datastore有効化
+     - Firestore有効化
    - 環境変数設定
      - `.env`ファイル作成（開発環境）
      - Cloud Run環境変数設定（本番環境）
@@ -288,12 +327,12 @@ env_variables:
 2. **Phase 2: データモデル実装**
    - `models/subscription.py`作成
      - UserSubscriptionModelクラス実装
-     - Datastore接続ユーティリティ作成
+     - Firestore接続ユーティリティ作成
    - web3リポジトリ側の対応
      - UserStatモデルに`plan_id`フィールド追加
 
-3. **Phase 3: Fast APIエンドポイント実装**
-   - `app.py`作成（Fast APIアプリケーション）
+3. **Phase 3: FastAPI APIエンドポイント実装**
+   - `app.py`作成（FastAPIアプリケーション）
    - `/api/create-checkout-session` - Checkout Session作成
    - `/api/stripe-webhook` - Webhook受信
    - `/api/create-portal-session` - Customer Portal URL生成
@@ -356,12 +395,22 @@ env_variables:
 
 ### データ整合性
 
-- **トランザクション更新**: `db.run_in_transaction()`でUserStatとUserSubscriptionを同時更新
-  - 注意：同一エンティティグループ内での更新が必要（キー名を統一）
-- **冪等性の確保**: UserSubscriptionの`updated`フィールドとStripeイベントのタイムスタンプを比較
-- **定期確認**: 日次バッチで同期状態を確認
-- **不整合検出時**: Sentryで通知、手動修正
-- **リトライロジック**: トランザクション失敗時は自動リトライ（最大3回）
+- **重要な制約**: web3（Cloud Datastore）とweb-subscription（Cloud Firestore）は異なるデータベースのため、トランザクションによる同時更新は不可
+- **整合性保証の方針**:
+  1. **順次更新**: Webhook受信時に以下の順序で更新
+     - 先にFirestoreのUserSubscriptionを更新
+     - 成功したらweb3 APIを呼び出してUserStatを更新
+     - UserStat更新が失敗した場合は、Stripeに500エラーを返してリトライを促す
+  2. **冪等性の確保**:
+     - UserSubscriptionの`updated`フィールドとStripeイベントのタイムスタンプを比較
+     - 同じイベントIDの重複処理を防ぐ
+  3. **リトライメカニズム**:
+     - Stripeの自動リトライ（最大72時間）を活用
+     - web3 API呼び出し失敗時は内部で3回までリトライ
+  4. **監視とアラート**:
+     - 不整合検出時はSentryで通知
+     - 日次バッチで両システムの同期状態を確認
+     - 不整合があれば手動修正またはバッチ修正
 
 
 ## 注意事項
