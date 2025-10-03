@@ -104,12 +104,7 @@ APP_ENV=development                       # 開発環境（APIドキュメント
 
 ## データモデル設計
 
-### UserStatモデルへの追加（web3リポジトリ側）
-
-既存の[web3リポジトリ](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
-- `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
-
-### 新規モデル: UserSubscription (Cloud Firestore)
+### UserSubscription (Cloud Firestore)
 
 **管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）  
 **実装場所**: `app/models/subscription.py`  
@@ -244,6 +239,11 @@ sequenceDiagram
 - `invoice.payment_failed`: 支払い失敗
 
 ## web3側で必要なAPI実装
+
+### UserStatモデルへの追加（web3リポジトリ側）
+
+既存の[web3リポジトリ](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
+- `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
 ### 新規API: infrastructure/update_user_plan
 **エンドポイント**: POST /api/infrastructure/update_user_plan  
