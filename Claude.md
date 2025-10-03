@@ -207,7 +207,7 @@ sequenceDiagram
     ST-->>U: 決済成功画面<br/>calil.jp/subscription/successへリダイレクト
 
     Note over U,W3: 4. Webhook処理（順次更新）
-    ST->>S: POST /api/stripe-webhook<br/>Event: checkout.session.completed
+    ST->>S: POST /subscription/api/stripe-webhook<br/>Event: checkout.session.completed
     S->>S: Webhook署名検証
     S->>DS: UserSubscription作成/更新<br/>- stripe_customer_id<br/>- stripe_subscription_id<br/>- plan_name: "Basic"<br/>- subscription_status: "active"
     DS-->>S: Firestore保存完了
