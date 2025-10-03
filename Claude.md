@@ -268,8 +268,8 @@ sequenceDiagram
 ## web3側で必要なAPI実装
 
 ### 新規API: infrastructure/update_user_plan
-**エンドポイント**: POST /api/infrastructure/update_user_plan
-**認証**: INFRASTRUCTURE_API_PASSWORD必須
+**エンドポイント**: POST /api/infrastructure/update_user_plan  
+**認証**: INFRASTRUCTURE_API_PASSWORD必須  
 **リクエストボディ**:
 ```json
 {
@@ -297,15 +297,15 @@ sequenceDiagram
 
 ### 環境変数設定
 
-### secret.yamlへの追加
-```yaml
-env_variables:
-  STRIPE_SECRET_KEY: 'sk_xxx'
-  STRIPE_WEBHOOK_SECRET: 'whsec_xxx'
-  STRIPE_PRICE_ID_BASIC: 'price_xxx'     # 月額1,000円プラン
-  STRIPE_PRICE_ID_STANDARD: 'price_xxx'  # 月額2,000円プラン
-  STRIPE_PRICE_ID_PRO: 'price_xxx'       # 月額5,000円プラン
-  STRIPE_PUBLISHABLE_KEY: 'pk_xxx'
+### .envファイルへの追加
+```bash
+# Stripe設定
+STRIPE_SECRET_KEY=sk_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+STRIPE_PRICE_ID_BASIC=price_xxx        # 月額1,000円プラン
+STRIPE_PRICE_ID_STANDARD=price_xxx     # 月額2,000円プラン
+STRIPE_PRICE_ID_PRO=price_xxx          # 月額5,000円プラン
+STRIPE_PUBLISHABLE_KEY=pk_xxx
 ```
 
 ## 実装手順
