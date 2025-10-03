@@ -47,7 +47,7 @@
 uv sync
 
 # 開発サーバー起動
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 5000
 
 # テスト実行
 USE_MOCK_FIRESTORE=true uv run python -m pytest tests/ -v
@@ -111,9 +111,6 @@ class UserSubscriptionModel:
 
         # ドキュメントのデータを設定
         doc_data = {
-            # ユーザー情報
-            'user_cuid': data.get('cuid'),  # UserStatとの紐付け用
-
             # Stripe情報
             'stripe_customer_id': data.get('stripe_customer_id', ''),
             'stripe_subscription_id': data.get('stripe_subscription_id', ''),
@@ -169,14 +166,12 @@ class UserSubscriptionModel:
 
 ## コントローラー実装
 
-### 新規: controllers/subscription.py
+### app.py
 - `SubscriptionPage`: サブスクリプション管理画面
 - `PricingPage`: プラン選択画面（3つのプランを表示）
 - `CreateCheckoutSession`: Checkout Session作成API（プランIDを受け取る）
 - `StripeWebhook`: Webhook受信エンドポイント
 - `CustomerPortalSession`: Customer Portal URLの生成
-- `UpgradePlan`: プランアップグレード処理
-- `DowngradePlan`: プランダウングレード処理
 
 ## Stripe顧客管理
 
