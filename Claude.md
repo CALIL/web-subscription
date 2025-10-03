@@ -160,7 +160,7 @@ APP_ENV=development                       # 開発環境（APIドキュメント
 1. **初回購入時**:
    - `customer_creation='always'`で自動的にStripe顧客を作成
    - `customer_email`にカーリルのユーザーメールを設定
-      - 空白にした場合、(Stripe側でユーザーにメールアドレスを尋ねる)[https://docs.stripe.com/api/checkout/sessions/object?api-version=2025-09-30.preview]
+      - 空白にした場合、[Stripe側でユーザーにメールアドレスを尋ねる](https://docs.stripe.com/api/checkout/sessions/object?api-version=2025-09-30.preview)
       - カーリルのemailが未検証の場合、どうするかは最後に調整
    - `client_reference_id`にCUIDを設定
 
