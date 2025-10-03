@@ -39,6 +39,33 @@
 - **パッケージ管理**: uv 0.6.10+
 - **テスト**: pytest, mypy (型安全性100%達成)
 
+## プロジェクト構造
+
+```
+web-subscription/
+├── app/
+│   ├── main.py                 # FastAPIアプリケーション
+│   ├── config/                 # 設定管理
+│   │   └── settings.py         # 環境変数、Stripe設定
+│   ├── core/                   # ビジネスロジック
+│   │   ├── stripe_service.py   # Stripe操作
+│   │   └── subscription.py     # サブスクリプション管理
+│   ├── infrastructure/         # インフラ層
+│   │   ├── firestore.py        # Firestore接続
+│   │   └── web3_api.py         # web3 API連携
+│   ├── models/                 # データモデル
+│   │   └── subscription.py     # UserSubscriptionモデル
+│   └── templates/              # HTMLテンプレート
+│       ├── pricing.html        # プラン選択画面
+│       └── success.html        # 購入完了画面
+├── tests/                      # テストスイート
+│   ├── conftest.py
+│   └── test_*.py
+├── .env                        # 環境変数（開発環境）
+├── pyproject.toml              # プロジェクト設定
+└── .github/workflows/          # CI/CD設定
+```
+
 
 ## 開発コマンド
 
@@ -82,96 +109,47 @@ APP_ENV=development                       # 開発環境（APIドキュメント
 既存のweb3リポジトリ（**Cloud Datastore使用**）のUserStatモデルに以下のプロパティを追加:
 - `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
-#### 新規モデル: UserSubscription (Cloud Firestore)
+### 新規モデル: UserSubscription (Cloud Firestore)
 
-**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）  
-**実装場所**: web-subscriptionリポジトリ（Cloud Run上で動作）  
-**データベース選択の理由**:
-- web3とは独立したマイクロサービスとして構築
-- Firestoreのリアルタイム同期機能を将来的に活用予定
-- **注意**: web3（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
+**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）
+**実装場所**: `app/models/subscription.py`
+**注意**: web3（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
 
+**フィールド構成**:
 ```python
-from google.cloud import firestore
-from datetime import datetime
+{
+    # Stripe情報
+    'stripe_customer_id': str,        # cus_xxx
+    'stripe_subscription_id': str,    # sub_xxx
+    'stripe_price_id': str,           # price_xxx
 
-class UserSubscriptionModel:
-    """Google Cloud Firestoreを使用したUserSubscriptionモデル"""
+    # サブスクリプション情報
+    'plan_name': str,                 # Basic/Standard/Pro
+    'plan_amount': int,               # 1000/2000/5000
+    'subscription_status': str,       # active/canceled/past_due等
+                                      # ステータスの詳細: https://docs.stripe.com/billing/subscriptions/overview?locale=ja-JP
 
-    COLLECTION = 'user_subscriptions'
+    'current_period_end': datetime,   # 現在の請求期間終了日
 
-    @classmethod
-    def create_or_update(cls, db: firestore.Client, data: dict):
-        """UserSubscriptionドキュメントの作成または更新"""
-        # cuidをドキュメントIDとして使用
-        doc_ref = db.collection(cls.COLLECTION).document(data['cuid'])
-
-        # ドキュメントの存在確認
-        doc = doc_ref.get()
-
-        # ドキュメントのデータを設定
-        doc_data = {
-            # Stripe情報
-            'stripe_customer_id': data.get('stripe_customer_id', ''),
-            'stripe_subscription_id': data.get('stripe_subscription_id', ''),
-            'stripe_price_id': data.get('stripe_price_id', ''),
-
-            # サブスクリプション情報
-            'plan_name': data.get('plan_name', ''),  # Basic/Standard/Pro
-            'plan_amount': data.get('plan_amount', 0),  # 1000/2000/5000
-            'subscription_status': data.get('subscription_status', ''),
-            # ステータスの詳細: https://docs.stripe.com/billing/subscriptions/overview?locale=ja-JP
-            # 主なステータス:
-            # - active: 有効（支払い済み）
-            # - past_due: 支払い期限超過（リトライ中）
-            # - canceled: キャンセル済み
-            # - incomplete: 初回支払い未完了
-            # - incomplete_expired: 初回支払い期限切れ
-            # - trialing: トライアル中
-            # - unpaid: 未払い（リトライ終了）
-
-            'subscription_start_date': data.get('subscription_start_date'),
-            'subscription_end_date': data.get('subscription_end_date'),
-            'current_period_end': data.get('current_period_end'),
-
-            # メタ情報
-            'updated': firestore.SERVER_TIMESTAMP  # レコード更新日
-        }
-
-        # 新規作成時のみcreatedを設定
-        if not doc.exists:
-            doc_data['created'] = firestore.SERVER_TIMESTAMP
-
-        doc_ref.set(doc_data, merge=True)
-        return doc_ref.get()
-
-    @classmethod
-    def get_by_cuid(cls, db: firestore.Client, cuid: str):
-        """CUIDによるUserSubscriptionドキュメントの取得"""
-        doc_ref = db.collection(cls.COLLECTION).document(cuid)
-        doc = doc_ref.get()
-        return doc.to_dict() if doc.exists else None
-
-    @classmethod
-    def get_by_stripe_customer_id(cls, db: firestore.Client, stripe_customer_id: str):
-        """Stripe顧客IDによるUserSubscriptionドキュメントの取得"""
-        docs = db.collection(cls.COLLECTION).where(
-            'stripe_customer_id', '==', stripe_customer_id
-        ).limit(1).stream()
-
-        for doc in docs:
-            return doc.to_dict()
-        return None
+    # メタ情報
+    'created': datetime,              # 作成日時
+    'updated': datetime               # 更新日時
+}
 ```
 
-## コントローラー実装
+**主要メソッド**:
+- `create_or_update(cuid, data)` - ドキュメント作成/更新（cuidをドキュメントIDに使用）
+- `get_by_cuid(cuid)` - CUID検索
+- `get_by_stripe_customer_id(customer_id)` - Stripe顧客ID検索
 
-### app.py
-- `SubscriptionPage`: サブスクリプション管理画面
-- `PricingPage`: プラン選択画面（3つのプランを表示）
-- `CreateCheckoutSession`: Checkout Session作成API（プランIDを受け取る）
-- `StripeWebhook`: Webhook受信エンドポイント
-- `CustomerPortalSession`: Customer Portal URLの生成
+## APIエンドポイント
+
+`app/main.py`に実装するエンドポイント：
+- `GET /` - プラン選択画面
+- `POST /api/create-checkout-session` - Checkout Session作成
+- `POST /api/stripe-webhook` - Webhook受信
+- `POST /api/create-portal-session` - Customer Portal URL生成
+- `GET /success` - 購入完了画面
 
 ## Stripe顧客管理
 
@@ -310,62 +288,28 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 
 ## 実装手順
 
-1. **Phase 1: 基盤構築**
-   - プロジェクトセットアップ
-     - `uv init`でPython 3.13プロジェクト初期化
-     - `uv add fastapi[standard] google-cloud-firestore stripe`で依存関係追加
-   - Google Cloud設定
-     - サービスアカウント作成と認証設定
-     - Firestore有効化
-   - 環境変数設定
-     - `.env`ファイル作成（開発環境）
-     - Cloud Run環境変数設定（本番環境）
+1. **基盤構築**
+   - `uv init` → `uv add fastapi[standard] google-cloud-firestore stripe`
+   - `.env`ファイル作成（環境変数設定）
+   - Firestore有効化
 
-2. **Phase 2: データモデル実装**
-   - `models/subscription.py`作成
-     - UserSubscriptionModelクラス実装
-     - Firestore接続ユーティリティ作成
-   - web3リポジトリ側の対応
-     - UserStatモデルに`plan_id`フィールド追加
+2. **コア実装**
+   - `app/models/subscription.py` - UserSubscriptionモデル
+   - `app/core/stripe_service.py` - Stripe操作ロジック
+   - `app/infrastructure/firestore.py` - DB接続
+   - `app/main.py` - FastAPIエンドポイント
 
-3. **Phase 3: FastAPI APIエンドポイント実装**
-   - `app.py`作成（FastAPIアプリケーション）
-   - `/api/create-checkout-session` - Checkout Session作成
-   - `/api/stripe-webhook` - Webhook受信
-   - `/api/create-portal-session` - Customer Portal URL生成
-   - `/api/subscription-status` - サブスクリプション状態取得
+3. **Webhook処理**
+   - 署名検証とイベント処理ハンドラー
+   - web3 API連携（`infrastructure/web3_api.py`）
 
-4. **Phase 4: Stripe Webhook処理実装**
-   - Webhook署名検証
-   - イベント処理ハンドラー実装
-     - `checkout.session.completed`
-     - `customer.subscription.updated`
-     - `customer.subscription.deleted`
-     - `invoice.payment_succeeded`
-     - `invoice.payment_failed`
-
-5. **Phase 5: web3リポジトリとの連携**
-   - infrastructure APIの拡張
-     - `get_userstat`にplan_id追加
-   - MCPサーバー側の利用制限実装
-     - plan_idに基づくレート制限
-
-6. **Phase 6: ローカルテスト**
-   - Stripe CLIインストール
+4. **テスト**
    - `stripe listen --forward-to localhost:5000/api/stripe-webhook`
-   - テストカードでの決済フロー確認
+   - テストカードで決済フロー確認
 
-7. **Phase 7: Cloud Runデプロイ**
-   - Dockerfile作成
-   - Cloud Build設定
-   - デプロイスクリプト作成
-   - 環境変数設定
-
-8. **Phase 8: 本番準備**
-   - Stripe本番環境設定
-   - Webhook URL登録（Cloud Run URL）
-   - セキュリティチェック
-   - モニタリング設定
+5. **デプロイ**
+   - Cloud Run設定・環境変数設定
+   - Webhook URL登録
 
 ## セキュリティ考慮事項
 
