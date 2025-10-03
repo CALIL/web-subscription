@@ -45,20 +45,22 @@
 web-subscription/
 ├── app/
 │   ├── main.py                 # FastAPIアプリケーション
-│   ├── config/                 # 設定管理
+│   ├── config/
 │   │   └── settings.py         # 環境変数、Stripe設定
-│   ├── core/                   # ビジネスロジック
+│   ├── core/
 │   │   ├── stripe_service.py   # Stripe操作
 │   │   └── subscription.py     # サブスクリプション管理
-│   ├── infrastructure/         # インフラ層
+│   ├── infrastructure/
 │   │   ├── firestore.py        # Firestore接続
 │   │   └── web3_api.py         # web3 API連携
-│   ├── models/                 # データモデル
+│   ├── models/
 │   │   └── subscription.py     # UserSubscriptionモデル
-│   └── templates/              # HTMLテンプレート
+│   └── templates/
 │       ├── pricing.html        # プラン選択画面
 │       └── success.html        # 購入完了画面
-├── tests/                      # テストスイート
+├── scripts/
+│   └── sync_checker.py         # 日次同期チェックバッチ
+├── tests/
 │   ├── conftest.py
 │   └── test_*.py
 ├── .env                        # 環境変数（開発環境）
@@ -289,7 +291,7 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 ## 実装手順
 
 1. **基盤構築**
-   - `uv init` → `uv add fastapi[standard] google-cloud-firestore stripe`
+   - `uv init` → `uv add fastapi[standard] google-cloud-firestore stripe python-dotenv`
    - `.env`ファイル作成（環境変数設定）
    - Firestore有効化
 
@@ -301,15 +303,20 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 
 3. **Webhook処理**
    - 署名検証とイベント処理ハンドラー
-   - web3 API連携（`infrastructure/web3_api.py`）
+   - web3 API連携（`app/infrastructure/web3_api.py`）
 
-4. **テスト**
+4. **監視バッチ実装**
+   - `scripts/sync_checker.py` - 日次同期チェック
+   - Cloud Schedulerでの定期実行設定
+
+5. **テスト**
    - `stripe listen --forward-to localhost:5000/api/stripe-webhook`
    - テストカードで決済フロー確認
 
-5. **デプロイ**
+6. **デプロイ**
    - Cloud Run設定・環境変数設定
    - Webhook URL登録
+   - Cloud Schedulerジョブ作成
 
 ## セキュリティ考慮事項
 
@@ -350,7 +357,7 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
      - web3 API呼び出し失敗時は内部で3回までリトライ
   4. **監視とアラート**:
      - 不整合検出時はSentryで通知
-     - 日次バッチで両システムの同期状態を確認
+     - 日次バッチで両システムの同期状態を確認（`scripts/sync_checker.py`）
      - 不整合があれば手動修正またはバッチ修正
 
 
