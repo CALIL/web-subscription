@@ -1,5 +1,7 @@
 # web-subscription
 
+このファイルは Claude Code (claude.ai/code) がこのリポジトリで作業する際のガイドです。
+
 ## 概要
 月額課金のカーリル プレミアムプランをStripe Checkoutで実装  
 カーリルのMCPサーバーは基本無料で使えるが、このプランを購入すると利用上限が上がる
@@ -18,14 +20,60 @@
   - 例: 10月15日購入 → 11月15日が次回請求日
   - 月末調整例: 1月31日購入 → 2月28日（または29日）に請求
 
+## プラン変更ポリシー
+- **アップグレード**: 即座に反映、差額を日割り請求
+  - `proration_behavior: 'always_invoice'` を使用
+  - 例: 月の途中でBasic→Standardの場合、残り日数分の差額（1,000円の日割り）を請求
+- **ダウングレード**: 次回請求サイクルから反映
+  - `proration_behavior: 'none'` を使用
+  - 現在の請求期間終了まで現行プランを利用可能
+- **Customer Portal設定**:
+  - Stripeダッシュボードで上記ポリシーに合わせて設定
+
 
 ## 技術スタック
 
 - **言語**: Python 3.13+
-- **フレームワーク**: Flask, Pydantic V2
-- **データベース**: Google Cloud Datastore
+- **フレームワーク**: FastAPI, Pydantic V2
+- **データベース**: Google Cloud Firestore (ネイティブモード)
 - **パッケージ管理**: uv 0.6.10+
 - **テスト**: pytest, mypy (型安全性100%達成)
+
+
+## 開発コマンド
+
+```bash
+# 依存関係のインストール
+uv sync
+
+# 開発サーバー起動
+uv run uvicorn app.main:app --reload --port 8000
+
+# テスト実行
+USE_MOCK_FIRESTORE=true uv run python -m pytest tests/ -v
+
+# 型チェック
+uv run mypy app --ignore-missing-imports
+
+# セキュリティチェック
+uv run bandit -r app -ll -x "**/firestore_mock.py"
+
+# テストカバレッジ
+uv run python -m pytest tests/ --cov=app --cov-report=term-missing
+```
+
+## 環境変数
+
+```bash
+# 必須設定（本番環境）
+APP_ENV=production                        # 本番環境指定（APIドキュメント自動無効化）
+INFRASTRUCTURE_API_PASSWORD=xxx           # カーリルセッションAPI認証
+GOOGLE_CLOUD_PROJECT=your-project-id      # Firestore プロジェクトID
+
+# 開発環境
+USE_MOCK_FIRESTORE=true                   # Firestoreモック使用
+APP_ENV=development                       # 開発環境（APIドキュメント有効）
+```
 
 ## データモデル設計
 
@@ -314,14 +362,3 @@ env_variables:
 - **定期確認**: 日次バッチで同期状態を確認
 - **不整合検出時**: Sentryで通知、手動修正
 - **リトライロジック**: トランザクション失敗時は自動リトライ（最大3回）
-
-## プラン変更ポリシー
-
-- **アップグレード**: 即座に反映、差額を日割り請求
-  - `proration_behavior: 'always_invoice'` を使用
-  - 例: 月の途中でBasic→Standardの場合、残り日数分の差額（1,000円の日割り）を請求
-- **ダウングレード**: 次回請求サイクルから反映
-  - `proration_behavior: 'none'` を使用
-  - 現在の請求期間終了まで現行プランを利用可能
-- **Customer Portal設定**:
-  - Stripeダッシュボードで上記ポリシーに合わせて設定
