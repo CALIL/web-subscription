@@ -161,7 +161,7 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 ### カーリルのユーザー情報取得
 
 **エンドポイント**: `GET https://calil.jp/infrastructure/get_userstat?session_v2=xxx`
-- **認証**: Basic認証（ユーザー名: 空、パスワード: INFRASTRUCTURE_API_PASSWORD）
+- **認証**: Basic認証（ユーザー名: calil、パスワード: INFRASTRUCTURE_API_PASSWORD）
 - **セッションキー**: Cookieの`session_v2`から取得
 - **レスポンス**: JSON形式のユーザー情報
 
