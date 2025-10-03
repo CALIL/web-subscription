@@ -156,6 +156,35 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 - `POST /subscription/api/create-portal-session` - Customer Portal URL生成
 - `GET /subscription/success` - 購入完了画面
 
+## ユーザー認証とセッション管理
+
+### カーリルのユーザー情報取得
+
+**エンドポイント**: `GET https://calil.jp/infrastructure/get_userstat?session_v2=xxx`
+- **認証**: Basic認証（ユーザー名: 空、パスワード: INFRASTRUCTURE_API_PASSWORD）
+- **セッションキー**: Cookieの`session_v2`から取得
+- **レスポンス**: JSON形式のユーザー情報
+
+**レスポンス例**:
+```json
+{
+  "stat": "ok",
+  "cuid": "4754259718",
+  "email": "deguchik@gmail.com",
+  "nickname": "出口",
+  "thumbnail_url": "/profile/pics/1001.jpg",
+  "profile": "京都銀閣寺界隈を徘徊するプログラマーです。",
+  "service": "google",
+  "date": "2013-01-07 02:24:34.686283",
+  "update": "2013-11-14 01:16:46.162134"
+}
+```
+
+**重要フィールド**:
+- `cuid`: ユーザー識別子（Firestore文書IDとして使用）
+- `email`: Stripe顧客作成時に使用
+- `nickname`: ユーザー表示名
+
 ## Stripe顧客管理
 
 ### 顧客IDの管理方針
@@ -187,7 +216,9 @@ sequenceDiagram
     participant W3 as web3<br/>(App Engine)
 
     Note over U,W3: 1. プラン選択
-    U->>S: GET calil.jp/subscription
+    U->>S: GET calil.jp/subscription<br/>(Cookie: session_v2)
+    S->>W3: ユーザー情報取得<br/>infrastructure/get_userstat?session_v2=xxx
+    W3-->>S: ユーザー情報(CUID, email等)
     S->>S: プラン選択ページ生成
     S-->>U: 3つのプラン表示<br/>(Basic/Standard/Pro)
     U->>S: プラン選択（例：Basic）
