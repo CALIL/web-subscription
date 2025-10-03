@@ -139,7 +139,7 @@ APP_ENV=development                       # 開発環境（APIドキュメント
 - `get_by_cuid(cuid)` - CUID検索
 - `get_by_stripe_customer_id(customer_id)` - Stripe顧客ID検索
 
-## APIエンドポイント
+## エンドポイント
 
 `app/main.py`に実装するエンドポイント：
 - `GET /subscription` - プラン選択画面
