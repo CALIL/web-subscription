@@ -102,6 +102,14 @@ GOOGLE_CLOUD_PROJECT=your-project-id      # Firestore プロジェクトID
 # 開発環境
 USE_MOCK_FIRESTORE=true                   # Firestoreモック使用
 APP_ENV=development                       # 開発環境（APIドキュメント有効）
+
+# Stripe設定
+STRIPE_SECRET_KEY=sk_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+STRIPE_PRICE_ID_BASIC=price_xxx        # 月額1,000円プラン
+STRIPE_PRICE_ID_STANDARD=price_xxx     # 月額2,000円プラン
+STRIPE_PRICE_ID_PRO=price_xxx          # 月額5,000円プラン
+STRIPE_PUBLISHABLE_KEY=pk_xxx
 ```
 
 ## データモデル設計
@@ -274,19 +282,6 @@ sequenceDiagram
 返却JSONに以下のフィールドを追加:
 
 - `plan_id`: プラン名（'Basic'/'Standard'/'Pro'、未契約は空文字）
-
-### 環境変数設定
-
-### .envファイルへの追加
-```bash
-# Stripe設定
-STRIPE_SECRET_KEY=sk_xxx
-STRIPE_WEBHOOK_SECRET=whsec_xxx
-STRIPE_PRICE_ID_BASIC=price_xxx        # 月額1,000円プラン
-STRIPE_PRICE_ID_STANDARD=price_xxx     # 月額2,000円プラン
-STRIPE_PRICE_ID_PRO=price_xxx          # 月額5,000円プラン
-STRIPE_PUBLISHABLE_KEY=pk_xxx
-```
 
 ## 実装手順
 
