@@ -191,7 +191,7 @@ class UserSubscriptionModel:
 ```mermaid
 sequenceDiagram
     participant U as ユーザー
-    participant S as web-subscription<br/>(Flask/Cloud Run)<br/>calil.jp/subscription
+    participant S as web-subscription<br/>(Fast API/Cloud Run)<br/>calil.jp/subscription
     participant DS as Cloud Datastore
     participant ST as Stripe
     participant W3 as web3<br/>(App Engine)
@@ -237,7 +237,7 @@ sequenceDiagram
 ### フロー補足説明
 
 1. **プラン選択**: calil.jp/subscriptionでプラン選択ページを表示（reverse-proxy経由）
-2. **Checkout Session作成**: Flask APIがStripeのCheckout Sessionを作成し、顧客情報を紐付け
+2. **Checkout Session作成**: Fast APIがStripeのCheckout Sessionを作成し、顧客情報を紐付け
 3. **支払い処理**: ユーザーがStripeのチェックアウト画面でカード情報を入力
 4. **Webhook処理**: 決済成功後、StripeからWebhookを受信してデータベース更新、web3のUserStatも更新
 5. **利用開始**: 購入完了画面でサブスクリプション状態を確認
@@ -277,7 +277,7 @@ env_variables:
 1. **Phase 1: 基盤構築**
    - プロジェクトセットアップ
      - `uv init`でPython 3.13プロジェクト初期化
-     - `uv add flask google-cloud-datastore stripe`で依存関係追加
+     - `uv add fast-api google-cloud-datastore stripe`で依存関係追加
    - Google Cloud設定
      - サービスアカウント作成と認証設定
      - Datastore有効化
@@ -292,8 +292,8 @@ env_variables:
    - web3リポジトリ側の対応
      - UserStatモデルに`plan_id`フィールド追加
 
-3. **Phase 3: Flask APIエンドポイント実装**
-   - `app.py`作成（Flaskアプリケーション）
+3. **Phase 3: Fast APIエンドポイント実装**
+   - `app.py`作成（Fast APIアプリケーション）
    - `/api/create-checkout-session` - Checkout Session作成
    - `/api/stripe-webhook` - Webhook受信
    - `/api/create-portal-session` - Customer Portal URL生成
