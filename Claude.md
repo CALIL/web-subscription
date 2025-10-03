@@ -248,7 +248,7 @@ sequenceDiagram
 - `invoice.payment_succeeded`: 更新決済成功
 - `invoice.payment_failed`: 支払い失敗
 
-## web3側で必要なAPI実装
+## web3側で必要な実装
 
 ### UserStatモデルへの追加（web3リポジトリ側）
 
