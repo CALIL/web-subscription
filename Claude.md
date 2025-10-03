@@ -252,7 +252,7 @@ sequenceDiagram
 
 ### UserStatモデルへの追加（web3リポジトリ側）
 
-既存の[web3リポジトリ](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
+既存の[web3](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
 - `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
 ### 新規API: infrastructure/update_user_plan
