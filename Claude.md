@@ -199,7 +199,7 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 
 ### 新規API: infrastructure/update_user_plan
 **エンドポイント**: POST /api/infrastructure/update_user_plan  
-**認証**: INFRASTRUCTURE_API_PASSWORD必須  
+**認証**: Google IAM認証  
 **リクエストボディ**:
 ```json
 {
