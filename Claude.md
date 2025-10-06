@@ -185,6 +185,41 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 - `email`: Stripe顧客作成時に使用
 - `nickname`: ユーザー表示名
 
+## web3側で必要な実装
+
+### UserStatモデルへの追加（web3リポジトリ側）
+
+既存の[web3](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
+- `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
+
+### 既存API: infrastructure/get_userstat
+返却JSONに以下のフィールドを追加:
+
+- `plan_id`: プラン名（'Basic'/'Standard'/'Pro'、未契約は空文字）
+
+### 新規API: infrastructure/update_user_plan
+**エンドポイント**: POST /api/infrastructure/update_user_plan  
+**認証**: INFRASTRUCTURE_API_PASSWORD必須  
+**リクエストボディ**:
+```json
+{
+  "cuid": "user_cuid_here",
+  "plan_id": "Basic"  // 'Basic'/'Standard'/'Pro' または空文字
+}
+```
+**レスポンス**:
+```json
+{
+  "success": true,
+  "cuid": "user_cuid_here",
+  "plan_id": "Basic"
+}
+```
+**実装内容**:
+- UserStatエンティティの`plan_id`フィールドを更新
+- 存在しないユーザーの場合は404エラー
+- 更新失敗時は500エラー
+
 ## Stripe顧客管理
 
 ### 顧客IDの管理方針
@@ -278,41 +313,6 @@ sequenceDiagram
 - `customer.subscription.deleted`: サブスクリプション削除
 - `invoice.payment_succeeded`: 更新決済成功
 - `invoice.payment_failed`: 支払い失敗
-
-## web3側で必要な実装
-
-### UserStatモデルへの追加（web3リポジトリ側）
-
-既存の[web3](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
-- `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
-
-### 既存API: infrastructure/get_userstat
-返却JSONに以下のフィールドを追加:
-
-- `plan_id`: プラン名（'Basic'/'Standard'/'Pro'、未契約は空文字）
-
-### 新規API: infrastructure/update_user_plan
-**エンドポイント**: POST /api/infrastructure/update_user_plan  
-**認証**: INFRASTRUCTURE_API_PASSWORD必須  
-**リクエストボディ**:
-```json
-{
-  "cuid": "user_cuid_here",
-  "plan_id": "Basic"  // 'Basic'/'Standard'/'Pro' または空文字
-}
-```
-**レスポンス**:
-```json
-{
-  "success": true,
-  "cuid": "user_cuid_here",
-  "plan_id": "Basic"
-}
-```
-**実装内容**:
-- UserStatエンティティの`plan_id`フィールドを更新
-- 存在しないユーザーの場合は404エラー
-- 更新失敗時は500エラー
 
 
 ## 実装手順
