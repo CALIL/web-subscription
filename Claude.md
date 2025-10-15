@@ -507,7 +507,7 @@ sequenceDiagram
 
 - 本番環境では `APP_ENV=production` を必ず設定（APIドキュメント無効化）
 - Windows環境では `127.0.0.1` を使用（`0.0.0.0` は避ける）
-- Firestoreモックファイル（`firestore_mock.py`）はセキュリティチェックから除外
+- Firestoreモックファイル（`tests/firestore_mock.py`）はテスト用ファイルとして`tests`フォルダに配置
 
 ## 関連ドキュメント
 

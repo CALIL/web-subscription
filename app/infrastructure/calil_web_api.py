@@ -96,7 +96,8 @@ class CalilWebAPIClient:
             CalilWebAPIError: 認証に失敗した場合
         '''
         try:
-            credentials, project = self._get_credentials()
+            # デフォルト認証情報を使用してIDトークンを取得
+            # credentials変数は現在使用していないが、将来の拡張性のために取得
             auth_req = Request()
             token = id_token.fetch_id_token(auth_req, self.audience)
             return token
