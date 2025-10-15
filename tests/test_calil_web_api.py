@@ -1,18 +1,18 @@
 '''
-web3 API クライアントのテスト
+CalilWeb API クライアントのテスト
 
-Web3APIClientクラスの各メソッドをテストする。
+CalilWebAPIClientクラスの各メソッドをテストする。
 モックを使用してネットワーク通信を行わずにテストを実行。
 '''
 
 import pytest
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 import httpx
-from app.infrastructure.web3_api import (
-    Web3APIClient,
+from app.infrastructure.calil_web_api import (
+    CalilWebAPIClient,
     UserInfo,
     UpdatePlanResponse,
-    Web3APIError
+    CalilWebAPIError
 )
 
 
@@ -25,7 +25,7 @@ def mock_id_token():
 @pytest.fixture
 def mock_credentials():
     '''Google認証情報のモック'''
-    with patch('app.infrastructure.web3_api.google.auth.default') as mock_auth:
+    with patch('app.infrastructure.calil_web_api.google.auth.default') as mock_auth:
         mock_auth.return_value = (Mock(), 'test-project')
         yield mock_auth
 
@@ -33,15 +33,15 @@ def mock_credentials():
 @pytest.fixture
 def mock_fetch_id_token(mock_id_token):
     '''IDトークン取得のモック'''
-    with patch('app.infrastructure.web3_api.id_token.fetch_id_token') as mock_fetch:
+    with patch('app.infrastructure.calil_web_api.id_token.fetch_id_token') as mock_fetch:
         mock_fetch.return_value = mock_id_token
         yield mock_fetch
 
 
 @pytest.fixture
 def client(mock_credentials, mock_fetch_id_token):
-    '''Web3APIClientのインスタンス（モック済み）'''
-    return Web3APIClient(
+    '''CalilWebAPIClientのインスタンス（モック済み）'''
+    return CalilWebAPIClient(
         audience='https://test.appspot.com',
         base_url='https://test.api.com',
         timeout=10.0
@@ -103,8 +103,8 @@ class TestUserInfoModel:
             UserInfo(**user_info_response)
 
 
-class TestWeb3APIClient:
-    '''Web3APIClientのテスト'''
+class TestCalilWebAPIClient:
+    '''CalilWebAPIClientのテスト'''
 
     @pytest.mark.asyncio
     async def test_get_user_info_success(self, client, user_info_response, mock_id_token):
@@ -139,7 +139,7 @@ class TestWeb3APIClient:
     @pytest.mark.asyncio
     async def test_get_user_info_no_session(self, client):
         '''セッショントークンが空の場合'''
-        with pytest.raises(Web3APIError) as exc_info:
+        with pytest.raises(CalilWebAPIError) as exc_info:
             await client.get_user_info('')
 
         assert exc_info.value.status_code == 400
@@ -157,7 +157,7 @@ class TestWeb3APIClient:
             mock_instance.post.return_value = mock_response
             mock_client.return_value.__aenter__.return_value = mock_instance
 
-            with pytest.raises(Web3APIError) as exc_info:
+            with pytest.raises(CalilWebAPIError) as exc_info:
                 await client.get_user_info('invalid_session')
 
             assert exc_info.value.status_code == 404
@@ -181,7 +181,7 @@ class TestWeb3APIClient:
             mock_instance.post.return_value = mock_response
             mock_client.return_value.__aenter__.return_value = mock_instance
 
-            with pytest.raises(Web3APIError) as exc_info:
+            with pytest.raises(CalilWebAPIError) as exc_info:
                 await client.get_user_info('test_session')
 
             assert exc_info.value.status_code == 500
@@ -220,7 +220,7 @@ class TestWeb3APIClient:
     @pytest.mark.asyncio
     async def test_update_user_plan_invalid_plan_id(self, client):
         '''不正なプランIDの場合'''
-        with pytest.raises(Web3APIError) as exc_info:
+        with pytest.raises(CalilWebAPIError) as exc_info:
             await client.update_user_plan('1234567890', 'InvalidPlan')
 
         assert exc_info.value.status_code == 400
@@ -229,7 +229,7 @@ class TestWeb3APIClient:
     @pytest.mark.asyncio
     async def test_update_user_plan_empty_cuid(self, client):
         '''CUIDが空の場合'''
-        with pytest.raises(Web3APIError) as exc_info:
+        with pytest.raises(CalilWebAPIError) as exc_info:
             await client.update_user_plan('', 'Basic')
 
         assert exc_info.value.status_code == 400
@@ -248,7 +248,7 @@ class TestWeb3APIClient:
             mock_instance.post.return_value = mock_response
             mock_client.return_value.__aenter__.return_value = mock_instance
 
-            with pytest.raises(Web3APIError) as exc_info:
+            with pytest.raises(CalilWebAPIError) as exc_info:
                 await client.update_user_plan('9999999999', 'Basic')
 
             assert exc_info.value.status_code == 404
@@ -262,7 +262,7 @@ class TestWeb3APIClient:
             mock_instance.post.side_effect = httpx.RequestError('Connection refused')
             mock_client.return_value.__aenter__.return_value = mock_instance
 
-            with pytest.raises(Web3APIError) as exc_info:
+            with pytest.raises(CalilWebAPIError) as exc_info:
                 await client.get_user_info('test_session')
 
             assert exc_info.value.status_code == 500
@@ -303,12 +303,12 @@ class TestWeb3APIClient:
             assert result.plan_id == 'Standard'
 
 
-class TestWeb3APIError:
-    '''Web3APIErrorのテスト'''
+class TestCalilWebAPIError:
+    '''CalilWebAPIErrorのテスト'''
 
     def test_error_with_detail(self):
         '''詳細情報付きエラー'''
-        error = Web3APIError(
+        error = CalilWebAPIError(
             status_code=400,
             message='Bad Request',
             detail={'field': 'plan_id', 'error': 'invalid'}
@@ -320,7 +320,7 @@ class TestWeb3APIError:
 
     def test_error_without_detail(self):
         '''詳細情報なしエラー'''
-        error = Web3APIError(
+        error = CalilWebAPIError(
             status_code=500,
             message='Internal Server Error'
         )
@@ -333,7 +333,7 @@ class TestIDTokenCaching:
 
     def test_credentials_cache(self, mock_credentials):
         '''認証情報のキャッシュが効いているか確認'''
-        client = Web3APIClient()
+        client = CalilWebAPIClient()
 
         # 2回呼び出しても、実際の認証は1回のみ
         creds1 = client._get_credentials()
@@ -344,11 +344,11 @@ class TestIDTokenCaching:
 
     def test_id_token_error_handling(self):
         '''IDトークン取得エラーのハンドリング'''
-        with patch('app.infrastructure.web3_api.id_token.fetch_id_token') as mock_fetch:
+        with patch('app.infrastructure.calil_web_api.id_token.fetch_id_token') as mock_fetch:
             mock_fetch.side_effect = Exception('Auth failed')
 
-            client = Web3APIClient()
-            with pytest.raises(Web3APIError) as exc_info:
+            client = CalilWebAPIClient()
+            with pytest.raises(CalilWebAPIError) as exc_info:
                 client._get_id_token()
 
             assert exc_info.value.status_code == 401

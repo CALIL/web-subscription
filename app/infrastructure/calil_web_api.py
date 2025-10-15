@@ -1,7 +1,7 @@
 '''
-web3 API (IAM認証) クライアントライブラリ
+CalilWeb API (IAM認証) クライアントライブラリ
 
-カーリルのweb3 APIと通信するためのクライアント実装。
+カーリルのCalilWeb APIと通信するためのクライアント実装。
 Google IAM認証を使用してセキュアな通信を行う。
 '''
 
@@ -50,8 +50,8 @@ class UpdatePlanResponse(BaseModel):
     updated_by: str
 
 
-class Web3APIError(Exception):
-    '''web3 API関連のエラー'''
+class CalilWebAPIError(Exception):
+    '''CalilWeb API関連のエラー'''
     def __init__(self, status_code: int, message: str, detail: Optional[Dict] = None):
         self.status_code = status_code
         self.message = message
@@ -59,8 +59,8 @@ class Web3APIError(Exception):
         super().__init__(f'[{status_code}] {message}')
 
 
-class Web3APIClient:
-    '''web3 API (IAM認証) クライアント'''
+class CalilWebAPIClient:
+    '''CalilWeb API (IAM認証) クライアント'''
 
     def __init__(
         self,
@@ -70,8 +70,8 @@ class Web3APIClient:
     ):
         '''
         Args:
-            audience: IAM認証のAudience (web3のApp Engine URL)
-            base_url: web3 APIのベースURL
+            audience: IAM認証のAudience (CalilWebのApp Engine URL)
+            base_url: CalilWeb APIのベースURL
             timeout: HTTPリクエストのタイムアウト秒数
         '''
         self.audience = audience
@@ -93,7 +93,7 @@ class Web3APIClient:
             IDトークン文字列
 
         Raises:
-            Web3APIError: 認証に失敗した場合
+            CalilWebAPIError: 認証に失敗した場合
         '''
         try:
             credentials, project = self._get_credentials()
@@ -101,7 +101,7 @@ class Web3APIClient:
             token = id_token.fetch_id_token(auth_req, self.audience)
             return token
         except Exception as e:
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=401,
                 message=f'Failed to get ID token: {str(e)}'
             )
@@ -117,10 +117,10 @@ class Web3APIClient:
             UserInfo: ユーザー情報
 
         Raises:
-            Web3APIError: APIエラーが発生した場合
+            CalilWebAPIError: APIエラーが発生した場合
         '''
         if not session_v2:
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=400,
                 message='session_v2 is required'
             )
@@ -140,7 +140,7 @@ class Web3APIClient:
                     # ユーザー未ログインまたはデータなし
                     data = response.json()
                     if data.get('stat') == 'nouser':
-                        raise Web3APIError(
+                        raise CalilWebAPIError(
                             status_code=404,
                             message='User not logged in or user data not found',
                             detail=data
@@ -150,22 +150,22 @@ class Web3APIClient:
                 return UserInfo(**response.json())
 
         except httpx.HTTPStatusError as e:
-            # HTTPステータスエラーをWeb3APIErrorに変換
-            raise Web3APIError(
+            # HTTPステータスエラーをCalilWebAPIErrorに変換
+            raise CalilWebAPIError(
                 status_code=e.response.status_code,
                 message=f'HTTP error occurred: {e.response.text}',
                 detail=e.response.json() if e.response.text else None
             )
         except httpx.RequestError as e:
             # ネットワークエラーなど
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=500,
                 message=f'Request failed: {str(e)}'
             )
         except Exception as e:
-            if isinstance(e, Web3APIError):
+            if isinstance(e, CalilWebAPIError):
                 raise
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=500,
                 message=f'Unexpected error: {str(e)}'
             )
@@ -182,17 +182,17 @@ class Web3APIClient:
             UpdatePlanResponse: 更新結果
 
         Raises:
-            Web3APIError: APIエラーが発生した場合
+            CalilWebAPIError: APIエラーが発生した場合
         '''
         if not cuid:
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=400,
                 message='cuid is required'
             )
 
         valid_plans = ['', 'Basic', 'Standard', 'Pro']
         if plan_id not in valid_plans:
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=400,
                 message=f'Invalid plan_id: {plan_id}. Must be one of {valid_plans}'
             )
@@ -209,7 +209,7 @@ class Web3APIClient:
                 )
 
                 if response.status_code == 404:
-                    raise Web3APIError(
+                    raise CalilWebAPIError(
                         status_code=404,
                         message=f'User with cuid \'{cuid}\' not found'
                     )
@@ -218,20 +218,20 @@ class Web3APIClient:
                 return UpdatePlanResponse(**response.json())
 
         except httpx.HTTPStatusError as e:
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=e.response.status_code,
                 message=f'HTTP error occurred: {e.response.text}',
                 detail=e.response.json() if e.response.text else None
             )
         except httpx.RequestError as e:
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=500,
                 message=f'Request failed: {str(e)}'
             )
         except Exception as e:
-            if isinstance(e, Web3APIError):
+            if isinstance(e, CalilWebAPIError):
                 raise
-            raise Web3APIError(
+            raise CalilWebAPIError(
                 status_code=500,
                 message=f'Unexpected error: {str(e)}'
             )

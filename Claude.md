@@ -52,7 +52,7 @@ web-subscription/
 │   │   └── subscription.py     # サブスクリプション管理
 │   ├── infrastructure/
 │   │   ├── firestore.py        # Firestore接続
-│   │   └── web3_api.py         # web3 API連携
+│   │   └── calil_web_api.py    # CalilWeb API連携
 │   ├── models/
 │   │   └── subscription.py     # UserSubscriptionモデル
 │   └── templates/
@@ -97,7 +97,7 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 # 必須設定（本番環境）
 APP_ENV=production                        # 本番環境指定（APIドキュメント自動無効化）
 GOOGLE_CLOUD_PROJECT=your-project-id      # Firestore プロジェクトID
-WEB3_AUDIENCE=https://libmuteki2.appspot.com  # web3 IAM認証のAudience
+CALIL_WEB_AUDIENCE=https://libmuteki2.appspot.com  # CalilWeb IAM認証のAudience
 
 # 開発環境
 USE_MOCK_FIRESTORE=true                   # Firestoreモック使用
@@ -118,7 +118,7 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 
 **管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）
 **実装場所**: `app/models/subscription.py`
-**注意**: web3（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
+**注意**: CalilWeb（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
 
 **ドキュメントID**: カーリルのCUID（ユーザー識別子）を直接使用
 例: ドキュメントパス `users_subscriptions/{cuid}`
@@ -202,11 +202,11 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 - `nickname`: ユーザー表示名
 - `plan_id`: 現在のプラン（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
-## web3側で必要な実装
+## CalilWeb側で必要な実装
 
-### UserStatモデルへの追加（web3リポジトリ側）
+### UserStatモデルへの追加（CalilWebリポジトリ側）
 
-既存の[web3](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
+既存の[CalilWeb](https://github.com/CALIL/CalilWeb)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
 - `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
 ### API仕様
@@ -269,7 +269,7 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 
 ### IAM認証実装例
 
-**Pythonでのweb3 API呼び出し例**:
+**PythonでのCalilWeb API呼び出し例**:
 
 ```python
 import httpx
@@ -277,8 +277,8 @@ from google.auth.transport.requests import Request
 from google.oauth2 import id_token
 import google.auth
 
-class Web3APIClient:
-    """web3 API (IAM認証) クライアント"""
+class CalilWebAPIClient:
+    """CalilWeb API (IAM認証) クライアント"""
 
     def __init__(self, audience: str = "https://libmuteki2.appspot.com"):
         self.audience = audience
@@ -347,17 +347,17 @@ sequenceDiagram
     participant S as web-subscription<br/>(FastAPI/Cloud Run)<br/>calil.jp/subscription
     participant DS as Cloud Firestore
     participant ST as Stripe
-    participant W3 as web3<br/>(App Engine)
+    participant CW as CalilWeb<br/>(App Engine)
 
-    Note over U,W3: 1. プラン選択
+    Note over U,CW: 1. プラン選択
     U->>S: GET calil.jp/subscription<br/>(Cookie: session_v2)
-    S->>W3: ユーザー情報取得(IAM認証)<br/>POST infrastructure/get_userstat_v2<br/>{"session_v2": "xxx"}
-    W3-->>S: ユーザー情報(CUID, email, plan_id等)
+    S->>CW: ユーザー情報取得(IAM認証)<br/>POST infrastructure/get_userstat_v2<br/>{"session_v2": "xxx"}
+    CW-->>S: ユーザー情報(CUID, email, plan_id等)
     S->>S: プラン選択ページ生成
     S-->>U: 3つのプラン表示<br/>(Basic/Standard/Pro)
     U->>S: プラン選択（例：Basic）
 
-    Note over U,W3: 2. Checkout Session作成
+    Note over U,CW: 2. Checkout Session作成
     S->>DS: UserSubscription確認<br/>(既存顧客かチェック)
     DS-->>S: 既存レコードなし
 
@@ -365,30 +365,30 @@ sequenceDiagram
     ST-->>S: Checkout Session URL
     S->>U: Stripeチェックアウトへリダイレクト
 
-    Note over U,W3: 3. 支払い処理
+    Note over U,CW: 3. 支払い処理
     U->>ST: カード情報入力・決済
     ST->>ST: 顧客作成 (cus_xxx)
     ST->>ST: サブスクリプション作成 (sub_xxx)
     ST-->>U: 決済成功画面<br/>calil.jp/subscription/successへリダイレクト
 
-    Note over U,W3: 4. Webhook処理（順次更新）
+    Note over U,CW: 4. Webhook処理（順次更新）
     ST->>S: POST /subscription/stripe-webhook<br/>Event: checkout.session.completed
     S->>S: Webhook署名検証
     S->>DS: UserSubscription作成/更新<br/>- stripe_customer_id<br/>- stripe_subscription_id<br/>- plan_name: "Basic"<br/>- subscription_status: "active"
     DS-->>S: Firestore保存完了
 
-    Note over S,W3: トランザクション不可のため順次更新
-    S->>W3: API呼び出し(IAM認証)<br/>POST update_user_plan<br/>{"cuid": "xxx", "plan_id": "Basic"}
+    Note over S,CW: トランザクション不可のため順次更新
+    S->>CW: API呼び出し(IAM認証)<br/>POST update_user_plan<br/>{"cuid": "xxx", "plan_id": "Basic"}
     alt API呼び出し成功
-        W3->>W3: plan_id = "Basic" (Datastore更新)
-        W3-->>S: 更新完了
+        CW->>CW: plan_id = "Basic" (Datastore更新)
+        CW-->>S: 更新完了
         S-->>ST: HTTP 200 OK
     else API呼び出し失敗
-        W3-->>S: エラー応答
+        CW-->>S: エラー応答
         S-->>ST: HTTP 500 (Stripeが自動リトライ)
     end
 
-    Note over U,W3: 5. 利用開始
+    Note over U,CW: 5. 利用開始
     U->>S: GET calil.jp/subscription/success
     S->>DS: UserSubscription取得
     DS-->>S: サブスクリプション情報
@@ -400,7 +400,7 @@ sequenceDiagram
 1. **プラン選択**: calil.jp/subscriptionでプラン選択ページを表示（reverse-proxy経由）
 2. **Checkout Session作成**: FastAPI APIがStripeのCheckout Sessionを作成し、顧客情報を紐付け
 3. **支払い処理**: ユーザーがStripeのチェックアウト画面でカード情報を入力
-4. **Webhook処理**: 決済成功後、StripeからWebhookを受信してデータベース更新、web3のUserStatも更新
+4. **Webhook処理**: 決済成功後、StripeからWebhookを受信してデータベース更新、CalilWebのUserStatも更新
 5. **利用開始**: 購入完了画面でサブスクリプション状態を確認
 
 ## Stripe Webhook処理
@@ -429,7 +429,7 @@ sequenceDiagram
 
 3. **Webhook処理**
    - 署名検証とイベント処理ハンドラー
-   - web3 API連携（`app/infrastructure/web3_api.py`）
+   - CalilWeb API連携（`app/infrastructure/CalilWeb_api.py`）
 
 4. **監視バッチ実装**
    - `scripts/sync_checker.py` - 日次同期チェック
@@ -456,8 +456,8 @@ sequenceDiagram
 
 ### 実装済み
 
-✅ **web3 APIクライアント**: 18個のテスト全パス（警告0）
-✅ **カバレッジ**: web3_api.py 96%達成
+✅ **CalilWeb APIクライアント**: 18個のテスト全パス（警告0）
+✅ **カバレッジ**: calil_web_api.py 96%達成
 ✅ **型安全性**: Pydantic V2でデータモデル検証
 ✅ **エラーハンドリング**: カスタム例外クラスで詳細なエラー情報
 
@@ -485,18 +485,18 @@ sequenceDiagram
 
 ### データ整合性
 
-- **重要な制約**: web3（Cloud Datastore）とweb-subscription（Cloud Firestore）は異なるデータベースのため、トランザクションによる同時更新は不可
+- **重要な制約**: CalilWeb（Cloud Datastore）とweb-subscription（Cloud Firestore）は異なるデータベースのため、トランザクションによる同時更新は不可
 - **整合性保証の方針**:
   1. **順次更新**: Webhook受信時に以下の順序で更新
      - 先にFirestoreのUserSubscriptionを更新
-     - 成功したらweb3 APIを呼び出してUserStatを更新
+     - 成功したらCalilWeb APIを呼び出してUserStatを更新
      - UserStat更新が失敗した場合は、Stripeに500エラーを返してリトライを促す
   2. **冪等性の確保**:
      - UserSubscriptionの`updated`フィールドとStripeイベントのタイムスタンプを比較
      - 同じイベントIDの重複処理を防ぐ
   3. **リトライメカニズム**:
      - Stripeの自動リトライ（最大72時間）を活用
-     - web3 API呼び出し失敗時は内部で3回までリトライ
+     - CalilWeb API呼び出し失敗時は内部で3回までリトライ
   4. **監視とアラート**:
      - 不整合検出時はSentryで通知
      - 日次バッチで両システムの同期状態を確認（`scripts/sync_checker.py`）
