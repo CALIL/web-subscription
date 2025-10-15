@@ -15,16 +15,23 @@ from app.config.settings import settings
 class FirestoreClient:
     '''Firestoreクライアント'''
 
-    def __init__(self):
-        '''初期化'''
-        if settings.use_mock_firestore:
-            # モックを使用（テスト環境）
-            import sys
-            import os
-            # testsフォルダをパスに追加
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tests'))
-            from firestore_mock import MockFirestoreClient
-            self.db = MockFirestoreClient()
+    def __init__(self, mock_client=None):
+        '''
+        初期化
+
+        Args:
+            mock_client: テスト用のモッククライアント（オプション）
+        '''
+        if mock_client is not None:
+            # テスト時に明示的にモッククライアントが渡された場合
+            self.db = mock_client
+        elif settings.use_mock_firestore:
+            # 環境変数でモック使用が指定されている場合
+            # テスト実行時はconftest.pyなどでモックを注入することを推奨
+            raise ValueError(
+                'USE_MOCK_FIRESTORE is true, but mock client is not provided. '
+                'Please inject mock client in tests or set USE_MOCK_FIRESTORE=false'
+            )
         else:
             # 実際のFirestoreに接続
             self.db = firestore.Client(project=settings.google_cloud_project)
@@ -39,9 +46,13 @@ class UserSubscriptionRepository:
 
     COLLECTION_NAME = 'user_subscriptions'
 
-    def __init__(self):
-        '''初期化'''
-        self.client = FirestoreClient()
+    def __init__(self, mock_client=None):
+        '''初期化
+
+        Args:
+            mock_client: テスト用のモッククライアント（オプション）
+        '''
+        self.client = FirestoreClient(mock_client=mock_client)
         self.collection = self.client.get_collection(self.COLLECTION_NAME)
 
     async def create_or_update(self, cuid: str, data: Dict[str, Any]) -> Dict[str, Any]:

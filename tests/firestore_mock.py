@@ -8,6 +8,7 @@ Firestoreモック実装
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import uuid
+from google.api_core import exceptions
 
 
 class MockDocument:
@@ -52,6 +53,10 @@ class MockDocumentReference:
 
     def update(self, data: Dict[str, Any]):
         '''ドキュメントを更新'''
+        # Firestoreの実際の動作をシミュレート
+        if not self.collection._get_document(self.id):
+            # google.api_core.exceptions.NotFoundをシミュレート
+            raise exceptions.NotFound(f'Document {self.id} not found')
         self.collection._update_document(self.id, data)
 
     def delete(self):
@@ -149,10 +154,9 @@ class MockCollection:
 
     def _update_document(self, doc_id: str, data: Dict[str, Any]):
         '''内部: ドキュメントを更新'''
-        if doc_id in self._documents:
-            self._documents[doc_id].update(data)
-        else:
-            raise Exception(f'Document {doc_id} not found')
+        # 更新は存在するドキュメントに対してのみ行われる
+        # 存在チェックはupdateメソッドで実施済み
+        self._documents[doc_id].update(data)
 
     def _delete_document(self, doc_id: str):
         '''内部: ドキュメントを削除'''
