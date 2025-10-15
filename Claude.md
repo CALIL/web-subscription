@@ -96,8 +96,8 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 ```bash
 # 必須設定（本番環境）
 APP_ENV=production                        # 本番環境指定（APIドキュメント自動無効化）
-INFRASTRUCTURE_API_PASSWORD=xxx           # カーリルセッションAPI認証
 GOOGLE_CLOUD_PROJECT=your-project-id      # Firestore プロジェクトID
+WEB3_AUDIENCE=https://libmuteki2.appspot.com  # web3 IAM認証のAudience
 
 # 開発環境
 USE_MOCK_FIRESTORE=true                   # Firestoreモック使用
@@ -116,9 +116,14 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 
 ### UserSubscription (Cloud Firestore)
 
-**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）  
-**実装場所**: `app/models/subscription.py`  
+**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）
+**実装場所**: `app/models/subscription.py`
 **注意**: web3（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
+
+**ドキュメントID**: カーリルのCUID（ユーザー識別子）を直接使用
+例: ドキュメントパス `users_subscriptions/{cuid}`
+- CUIDはフィールドとしては保存せず、ドキュメントIDから取得
+- これにより1ユーザー1ドキュメントを保証
 
 **フィールド構成**:
 ```python
@@ -144,39 +149,50 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 
 **主要メソッド**:
 - `create_or_update(cuid, data)` - ドキュメント作成/更新（cuidをドキュメントIDに使用）
-- `get_by_cuid(cuid)` - CUID検索
-- `get_by_stripe_customer_id(customer_id)` - Stripe顧客ID検索
+- `get_by_cuid(cuid)` - ドキュメントID（CUID）で直接取得
+- `get_by_stripe_customer_id(customer_id)` - Stripe顧客IDで検索
 
 ## エンドポイント
 
 `app/main.py`に実装するエンドポイント：
 - `GET /subscription` - プラン選択画面
-- `POST /subscription/api/create-checkout-session` - Checkout Session作成
-- `POST /subscription/api/stripe-webhook` - Webhook受信
-- `POST /subscription/api/create-portal-session` - Customer Portal URL生成
+- `POST /subscription/create-checkout-session` - Checkout Session作成
+- `POST /subscription/stripe-webhook` - Webhook受信
+- `POST /subscription/create-portal-session` - Customer Portal URL生成
 - `GET /subscription/success` - 購入完了画面
 
 ## ユーザー認証とセッション管理
 
-### カーリルのユーザー情報取得
+### カーリルのユーザー情報取得 (IAM認証版)
 
-**エンドポイント**: `GET https://calil.jp/infrastructure/get_userstat?session_v2=xxx`
-- **認証**: Basic認証（ユーザー名: calil、パスワード: INFRASTRUCTURE_API_PASSWORD）
-- **セッションキー**: Cookieの`session_v2`から取得
-- **レスポンス**: JSON形式のユーザー情報
+**エンドポイント**: `POST https://calil.jp/infrastructure/get_userstat_v2`
+- **認証**: Google IAM認証（Cloud Runのサービスアカウントからアクセス）
+- **セッションキー**: リクエストボディの`session_v2`フィールドで送信
+
+**リクエスト**:
+```json
+{
+  "session_v2": "JWTセッショントークン（Cookieから取得）"
+}
+```
 
 **レスポンス例**:
 ```json
 {
   "stat": "ok",
+  "userkey": "calil:319f56829582135bca42cf125fbc8192",
   "cuid": "4754259718",
   "email": "deguchik@gmail.com",
   "nickname": "出口",
-  "thumbnail_url": "/profile/pics/1001.jpg",
+  "fill_profile": 1,
   "profile": "京都銀閣寺界隈を徘徊するプログラマーです。",
+  "thumbnail_url": "/profile/pics/1001.jpg",
+  "newsletter": 1,
   "service": "google",
+  "plan_id": "Basic",
   "date": "2013-01-07 02:24:34.686283",
-  "update": "2013-11-14 01:16:46.162134"
+  "update": "2013-11-14 01:16:46.162134",
+  "requested_by": "service-account@project.iam.gserviceaccount.com"
 }
 ```
 
@@ -184,6 +200,7 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 - `cuid`: ユーザー識別子（Firestore文書IDとして使用）
 - `email`: Stripe顧客作成時に使用
 - `nickname`: ユーザー表示名
+- `plan_id`: 現在のプラン（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
 ## web3側で必要な実装
 
@@ -192,33 +209,115 @@ STRIPE_PUBLISHABLE_KEY=pk_xxx
 既存の[web3](https://github.com/CALIL/web3)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
 - `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
-### 既存API: infrastructure/get_userstat
-返却JSONに以下のフィールドを追加:
+### API仕様
 
-- `plan_id`: プラン名（'Basic'/'Standard'/'Pro'、未契約は空文字）
+#### ユーザー情報取得API: infrastructure/get_userstat_v2
 
-### 新規API: infrastructure/update_user_plan
-**エンドポイント**: POST /api/infrastructure/update_user_plan  
-**認証**: Google IAM認証  
+**エンドポイント**: `POST https://calil.jp/infrastructure/get_userstat_v2`
+**認証**: Google IAM認証
+
 **リクエストボディ**:
+
 ```json
 {
-  "cuid": "user_cuid_here",
+  "session_v2": "JWTセッショントークン"
+}
+```
+
+**レスポンス**（plan_idフィールドを含む）:
+
+```json
+{
+  "stat": "ok",
+  "cuid": "4754259718",
+  "plan_id": "Basic",
+  "requested_by": "service-account@project.iam.gserviceaccount.com"
+  // ...その他のユーザー情報フィールド
+}
+```
+
+#### プラン更新API: infrastructure/update_user_plan
+
+**エンドポイント**: `POST https://calil.jp/infrastructure/update_user_plan`
+**認証**: Google IAM認証
+
+**リクエストボディ**:
+
+```json
+{
+  "cuid": "4754259718",
   "plan_id": "Basic"  // 'Basic'/'Standard'/'Pro' または空文字
 }
 ```
+
 **レスポンス**:
+
 ```json
 {
   "success": true,
-  "cuid": "user_cuid_here",
-  "plan_id": "Basic"
+  "cuid": "4754259718",
+  "plan_id": "Basic",
+  "updated_by": "service-account@project.iam.gserviceaccount.com"
 }
 ```
-**実装内容**:
-- UserStatエンティティの`plan_id`フィールドを更新
-- 存在しないユーザーの場合は404エラー
-- 更新失敗時は500エラー
+
+**エラーレスポンス**:
+- 401: IAM認証失敗
+- 404: 指定されたCUIDのユーザーが存在しない
+- 400: リクエストボディが不正またはplan_idが無効
+- 500: データベース更新エラー
+
+### IAM認証実装例
+
+**Pythonでのweb3 API呼び出し例**:
+
+```python
+import httpx
+from google.auth.transport.requests import Request
+from google.oauth2 import id_token
+import google.auth
+
+class Web3APIClient:
+    """web3 API (IAM認証) クライアント"""
+
+    def __init__(self, audience: str = "https://libmuteki2.appspot.com"):
+        self.audience = audience
+        self.base_url = "https://calil.jp/infrastructure"
+
+    def _get_id_token(self) -> str:
+        """Google IAM IDトークンの取得"""
+        credentials, project = google.auth.default()
+        auth_req = Request()
+        return id_token.fetch_id_token(auth_req, self.audience)
+
+    async def get_user_info(self, session_v2: str) -> dict:
+        """ユーザー情報取得 (get_userstat_v2)"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/get_userstat_v2",
+                headers={
+                    'Authorization': f'Bearer {self._get_id_token()}',
+                    'Content-Type': 'application/json'
+                },
+                json={'session_v2': session_v2}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def update_user_plan(self, cuid: str, plan_id: str) -> dict:
+        """ユーザープラン更新"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/update_user_plan",
+                headers={
+                    'Authorization': f'Bearer {self._get_id_token()}',
+                    'Content-Type': 'application/json'
+                },
+                json={'cuid': cuid, 'plan_id': plan_id}
+            )
+            response.raise_for_status()
+            return response.json()
+```
 
 ## Stripe顧客管理
 
@@ -252,8 +351,8 @@ sequenceDiagram
 
     Note over U,W3: 1. プラン選択
     U->>S: GET calil.jp/subscription<br/>(Cookie: session_v2)
-    S->>W3: ユーザー情報取得<br/>infrastructure/get_userstat?session_v2=xxx
-    W3-->>S: ユーザー情報(CUID, email等)
+    S->>W3: ユーザー情報取得(IAM認証)<br/>POST infrastructure/get_userstat_v2<br/>{"session_v2": "xxx"}
+    W3-->>S: ユーザー情報(CUID, email, plan_id等)
     S->>S: プラン選択ページ生成
     S-->>U: 3つのプラン表示<br/>(Basic/Standard/Pro)
     U->>S: プラン選択（例：Basic）
@@ -273,13 +372,13 @@ sequenceDiagram
     ST-->>U: 決済成功画面<br/>calil.jp/subscription/successへリダイレクト
 
     Note over U,W3: 4. Webhook処理（順次更新）
-    ST->>S: POST /subscription/api/stripe-webhook<br/>Event: checkout.session.completed
+    ST->>S: POST /subscription/stripe-webhook<br/>Event: checkout.session.completed
     S->>S: Webhook署名検証
     S->>DS: UserSubscription作成/更新<br/>- stripe_customer_id<br/>- stripe_subscription_id<br/>- plan_name: "Basic"<br/>- subscription_status: "active"
     DS-->>S: Firestore保存完了
 
     Note over S,W3: トランザクション不可のため順次更新
-    S->>W3: API呼び出し<br/>UserStat.plan_id更新
+    S->>W3: API呼び出し(IAM認証)<br/>POST update_user_plan<br/>{"cuid": "xxx", "plan_id": "Basic"}
     alt API呼び出し成功
         W3->>W3: plan_id = "Basic" (Datastore更新)
         W3-->>S: 更新完了
@@ -337,7 +436,7 @@ sequenceDiagram
    - Cloud Schedulerでの定期実行設定
 
 5. **テスト**
-   - `stripe listen --forward-to localhost:5000/api/stripe-webhook`
+   - `stripe listen --forward-to localhost:5000/subscription/stripe-webhook`
    - テストカードで決済フロー確認
 
 6. **デプロイ**
@@ -352,6 +451,13 @@ sequenceDiagram
 - ユーザー認証必須
 - APIキーの環境変数管理
 - HTTPSでの通信必須
+
+## 品質指標
+
+✅ テスト: 0個全パス（DCR含む、警告0）
+✅ 型安全性: mypy エラー0
+✅ カバレッジ: 主要機能0%以上
+✅ CI/CD: GitHub Actions自動テスト
 
 ## エラーハンドリングとリカバリー
 
