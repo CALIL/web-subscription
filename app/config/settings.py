@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # Google Cloud設定
     google_cloud_project: Optional[str] = os.getenv('GOOGLE_CLOUD_PROJECT')
     use_mock_firestore: bool = os.getenv('USE_MOCK_FIRESTORE', 'false').lower() == 'true'
+    firestore_database_name: str = os.getenv('FIRESTORE_DATABASE_NAME', '(default)')
 
     # CalilWeb API設定
     calil_web_audience: str = os.getenv('CALIL_WEB_AUDIENCE', 'https://libmuteki2.appspot.com')

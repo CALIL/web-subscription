@@ -34,7 +34,10 @@ class FirestoreClient:
             )
         else:
             # 実際のFirestoreに接続
-            self.db = firestore.Client(project=settings.google_cloud_project)
+            self.db = firestore.Client(
+                project=settings.google_cloud_project,
+                database=settings.firestore_database_name
+            )
 
     def get_collection(self, collection_name: str):
         '''コレクションの取得'''
