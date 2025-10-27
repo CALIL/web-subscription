@@ -712,6 +712,68 @@ async def send_email(to_email: str, template_id: str, template_data: dict):
    - GitHub Actionsで自動デプロイ（リリース作成時）
    - Stripe Webhook URL登録（https://web-subscription-xxxxx.run.app/subscription/stripe-webhook）
 
+## エラーハンドリング
+
+### エラーレスポンスフォーマット
+
+FastAPIのデフォルトフォーマットを基本とし、必要に応じて拡張します。
+
+#### 基本フォーマット
+
+```json
+{
+  "detail": "エラーメッセージ"
+}
+```
+
+#### 実装方法
+
+```python
+# app/core/exceptions.py
+from fastapi import HTTPException
+from typing import Optional
+
+class AppException(HTTPException):
+    """アプリケーション共通例外クラス"""
+    def __init__(
+        self,
+        status_code: int,
+        detail: str,
+        error_code: Optional[str] = None,
+        headers: Optional[dict] = None
+    ):
+        super().__init__(status_code=status_code, detail=detail, headers=headers)
+        self.error_code = error_code
+```
+
+#### エラーコード体系
+
+| エラーコード | HTTPステータス | 説明 | 使用場面 |
+|-------------|---------------|------|----------|
+| `subscription_already_exists` | 400 | 既存サブスクリプションあり | 重複購入防止 |
+| `invalid_price_id` | 400 | 無効な価格ID | プラン選択エラー |
+| `invalid_session` | 401 | セッション無効 | 認証失敗 |
+| `webhook_signature_invalid` | 401 | Webhook署名検証失敗 | Stripe Webhook |
+| `user_not_found` | 404 | ユーザー未登録 | CalilWeb API |
+| `payment_required` | 402 | 決済が必要 | 支払い失敗 |
+| `internal_error` | 500 | 内部エラー | 予期しないエラー |
+
+#### 使用例
+
+```python
+# エラーを投げる
+raise AppException(
+    status_code=400,
+    detail="既に有効なサブスクリプションが存在します。プラン変更はCustomer Portalから行ってください。",
+    error_code="subscription_already_exists"
+)
+
+# レスポンス
+{
+  "detail": "既に有効なサブスクリプションが存在します。プラン変更はCustomer Portalから行ってください。"
+}
+```
+
 ## セキュリティ考慮事項
 
 - Webhook署名の必須検証
@@ -788,13 +850,15 @@ GitHubでリリースを作成すると自動的にCloud Runへデプロイさ�
 4. Cloud Runへデプロイ（APP_ENV=productionを自動設定）
 
 #### 必要なGitHub Secrets
+
 - `GCP_SA_KEY`: Cloud Runデプロイ用サービスアカウントのJSON鍵
 
 #### デプロイ先
+
 - **プロジェクト**: libmuteki2
 - **サービス名**: web-subscription
 - **リージョン**: asia-northeast1
-- **URL**: https://web-subscription-xxxxx.run.app
+- **URL**: `https://web-subscription-xxxxx.run.app`
 
 ## 注意事項
 
