@@ -219,13 +219,53 @@ uv run uvicorn app.main:app --reload --port 5000
 
 ## ユーザー認証とセッション管理
 
+### 認証実装方針
+
+- **Cookieベース認証**: `session_v2`トークンをCookieから取得
+- **毎回API検証**: CalilWeb APIで都度ユーザー情報を取得（キャッシュなし）
+- **Dependency Injection**: FastAPIの依存性注入で実装
+
+```python
+# app/core/auth.py での実装
+async def get_current_user_optional(request: Request) -> Optional[dict]:
+    """認証オプショナル（未ログインでも続行可）"""
+    session_v2 = request.cookies.get("session_v2")
+    if not session_v2:
+        return None
+
+    try:
+        user_info = await calil_api.get_user_info(session_v2)
+        return user_info if user_info.get('stat') == 'ok' else None
+    except:
+        return None
+
+async def get_current_user_required(request: Request) -> dict:
+    """認証必須（未ログインは401エラー）"""
+    user = await get_current_user_optional(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="ログインが必要です")
+    return user
+```
+
+### エンドポイント別認証要件
+
+| エンドポイント | 認証 | 説明 |
+|---------------|------|------|
+| `GET /subscription` | オプショナル | 未ログインでも閲覧可、ログイン時は購読状態表示 |
+| `POST /subscription/create-checkout-session` | 必須 | 購入にはログイン必要 |
+| `POST /subscription/create-portal-session` | 必須 | Portal利用にはログイン必要 |
+| `GET /subscription/success` | 必須 | 購入完了画面の表示 |
+| `POST /subscription/stripe-webhook` | なし | Stripeからの呼び出し |
+
 ### カーリルのユーザー情報取得 (IAM認証版)
 
 **エンドポイント**: `POST https://calil.jp/infrastructure/get_userstat_v2`
+
 - **認証**: Google IAM認証（Cloud Runのサービスアカウントからアクセス）
 - **セッションキー**: リクエストボディの`session_v2`フィールドで送信
 
 **リクエスト**:
+
 ```json
 {
   "session_v2": "JWTセッショントークン（Cookieから取得）"
@@ -233,6 +273,7 @@ uv run uvicorn app.main:app --reload --port 5000
 ```
 
 **レスポンス例**:
+
 ```json
 {
   "stat": "ok",
