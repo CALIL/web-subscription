@@ -616,19 +616,6 @@ raise AppException(
 
 ## Dockerfile
 
-### マルチステージビルド構成
-
-uv公式イメージを使用した効率的なビルド：
-
-1. **ビルドステージ**: `ghcr.io/astral-sh/uv:python3.13-bookworm-slim`
-   - uvが組み込まれた公式イメージ
-   - 依存関係の高速インストール
-
-2. **実行ステージ**: `python:3.13-slim-bookworm`
-   - 最小限のPython実行環境
-   - 非rootユーザー（appuser）で実行
-   - ヘルスチェック機能付き
-
 ### 環境変数の扱い
 
 - `APP_ENV=production`: Dockerfile内で設定
@@ -651,13 +638,6 @@ GitHubでリリースを作成すると自動的にCloud Runへデプロイさ�
 #### 必要なGitHub Secrets
 
 - `GCP_SA_KEY`: Cloud Runデプロイ用サービスアカウントのJSON鍵
-
-#### デプロイ先
-
-- **プロジェクト**: libmuteki2
-- **サービス名**: web-subscription
-- **リージョン**: asia-northeast1
-- **URL**: `https://web-subscription-xxxxx.run.app`
 
 ## 注意事項
 
