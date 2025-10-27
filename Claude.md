@@ -76,17 +76,20 @@ web-subscription/
 # 依存関係のインストール
 uv sync
 
+# Firestoreエミュレータの起動（別ターミナル）
+gcloud emulators firestore start --host-port=localhost:8080
+
 # 開発サーバー起動
-uv run uvicorn app.main:app --reload --port 5000
+FIRESTORE_EMULATOR_HOST=localhost:8080 uv run uvicorn app.main:app --reload --port 5000
 
 # テスト実行
-USE_MOCK_FIRESTORE=true uv run python -m pytest tests/ -v
+FIRESTORE_EMULATOR_HOST=localhost:8080 uv run python -m pytest tests/ -v
 
 # 型チェック
 uv run mypy app --ignore-missing-imports
 
 # セキュリティチェック
-uv run bandit -r app -ll -x "**/firestore_mock.py"
+uv run bandit -r app -ll
 
 # テストカバレッジ
 uv run python -m pytest tests/ --cov=app --cov-report=term-missing
@@ -94,25 +97,35 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 
 ## 環境変数
 
+### 設計方針
+- **ローカル開発でも本番（Cloud Run）に近い構成で動作**させる
+- モックは使用せず、実際のサービス（テストモード）を使用
+- 環境による差異は最小限に抑える
+
+### 環境変数設定
+
 ```bash
-# 必須設定（本番環境）
-APP_ENV=production                        # 本番環境指定（APIドキュメント自動無効化）
-GOOGLE_CLOUD_PROJECT=your-project-id      # Firestore プロジェクトID
-CALIL_WEB_AUDIENCE=https://libmuteki2.appspot.com  # CalilWeb IAM認証のAudience
+# 環境識別
+APP_ENV=development                       # development（ローカル）/production（Cloud Run）
 
-# 開発環境
-USE_MOCK_FIRESTORE=true                   # Firestoreモック使用
-APP_ENV=development                       # 開発環境（APIドキュメント有効）
+# Google Cloud設定
+GOOGLE_CLOUD_PROJECT=web-subscription-dev # プロジェクトID（ローカル開発用）
+FIRESTORE_DATABASE_NAME=(default)         # Firestoreデータベース名
+FIRESTORE_EMULATOR_HOST=localhost:8080    # ローカル開発時：エミュレータ使用
 
-# Stripe設定
-STRIPE_SECRET_KEY=sk_xxx
+# CalilWeb API設定
+CALIL_WEB_AUDIENCE=https://libmuteki2.appspot.com  # IAM認証のAudience
+CALIL_WEB_BASE_URL=https://calil.jp/infrastructure # APIベースURL
+
+# Stripe設定（ローカル開発：sk_test_xxx、Cloud Run本番：sk_live_xxx）
+STRIPE_SECRET_KEY=sk_test_xxx
 STRIPE_WEBHOOK_SECRET=whsec_xxx
+STRIPE_PUBLISHABLE_KEY=pk_test_xxx
 STRIPE_PRICE_ID_BASIC=price_xxx        # 月額1,000円プラン
 STRIPE_PRICE_ID_STANDARD=price_xxx     # 月額2,000円プラン
 STRIPE_PRICE_ID_PRO=price_xxx          # 月額5,000円プラン
-STRIPE_PUBLISHABLE_KEY=pk_xxx
 
-# SendGrid設定
+# SendGrid設定（実際のAPIを使用）
 SENDGRID_API_KEY=SG.xxx                            # SendGrid APIキー
 SENDGRID_FROM_EMAIL=noreply@calil.jp               # 送信元メールアドレス
 SENDGRID_FROM_NAME=カーリル                        # 送信者名
@@ -121,6 +134,30 @@ SENDGRID_TEMPLATE_ID_SUBSCRIPTION_UPGRADE=d-xxx    # アップグレード用テ
 SENDGRID_TEMPLATE_ID_SUBSCRIPTION_DOWNGRADE=d-xxx  # ダウングレード用テンプレートID
 SENDGRID_TEMPLATE_ID_SUBSCRIPTION_CANCELED=d-xxx   # 解約用テンプレートID
 ```
+
+### ローカル開発環境の構築
+
+```bash
+# Firestoreエミュレータの起動（ローカル開発時）
+gcloud emulators firestore start --host-port=localhost:8080
+
+# 環境変数の設定
+export FIRESTORE_EMULATOR_HOST=localhost:8080
+
+# ローカルサーバーの起動
+uv run uvicorn app.main:app --reload --port 5000
+```
+
+### 環境別の違い
+
+| 項目 | ローカル開発環境 | Cloud Run本番環境 |
+|------|------------------|-------------------|
+| 実行環境 | ローカルマシン（localhost:5000） | Google Cloud Run |
+| APP_ENV | development | production |
+| Firestore | エミュレータ（localhost:8080） | Cloud Firestore |
+| Stripe | テストモード（sk_test_xxx） | 本番モード（sk_live_xxx） |
+| SendGrid | 実API（送信先を開発者に固定） | 実API（実際のユーザーに送信） |
+| CalilWeb API | 本番API（テスト用データ） | 本番API（実際のユーザーデータ） |
 
 ## データモデル設計
 
@@ -608,6 +645,38 @@ async def stripe_webhook(
 - メール送信失敗がWebhook処理に影響しない
 - 実装がシンプルで保守しやすい
 
+#### 開発環境での安全策
+
+```python
+# app/core/email_service.py
+async def send_email(to_email: str, template_id: str, template_data: dict):
+    """メール送信（開発環境では送信先を開発者に固定）"""
+
+    # 開発環境では送信先を固定（誤送信防止）
+    if settings.is_development:
+        original_to = to_email
+        to_email = "developer@calil.jp"  # 開発者のメール
+        logger.info(f"Dev mode: redirecting email from {original_to} to {to_email}")
+
+        # テンプレートデータに元の宛先を追加
+        template_data['dev_original_recipient'] = original_to
+
+    # SendGrid APIで送信
+    message = Mail(
+        from_email=settings.sendgrid_from_email,
+        to_emails=to_email,
+        subject=None,  # テンプレートで定義
+    )
+    message.template_id = template_id
+    message.dynamic_template_data = template_data
+
+    try:
+        sendgrid_client.send(message)
+    except Exception as e:
+        logger.error(f"Failed to send email: {e}")
+        # エラーでもWebhook処理は継続
+```
+
 #### エラーハンドリング
 
 - SendGrid API呼び出し失敗時はログに記録するが、Webhook処理は継続
@@ -639,9 +708,9 @@ async def stripe_webhook(
    - `stripe listen --forward-to localhost:5000/subscription/stripe-webhook`
    - テストカードで決済フロー確認
 
-5. **デプロイ**
-   - Cloud Run設定・環境変数設定（SendGrid APIキー含む）
-   - Webhook URL登録
+5. **Cloud Runへのデプロイ**
+   - Cloud Run設定・本番環境変数設定（SendGrid APIキー含む）
+   - Stripe Webhook URL登録（https://web-subscription-xxxxx.run.app/subscription/stripe-webhook）
 
 ## セキュリティ考慮事項
 
