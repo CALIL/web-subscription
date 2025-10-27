@@ -127,7 +127,7 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 **実装場所**: `app/models/subscription.py`  
 **注意**: CalilWeb（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
 
-**ドキュメントID**: カーリルのCUID（ユーザー識別子）を直接使用
+**ドキュメントID**: カーリルのCUID（ユーザー識別子）を直接使用  
 例: ドキュメントパス `users_subscriptions/{cuid}`
 - CUIDはフィールドとしては保存せず、ドキュメントIDから取得
 - これにより1ユーザー1ドキュメントを保証
