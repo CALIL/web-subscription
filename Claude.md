@@ -384,9 +384,53 @@ async def create_portal_session(stripe_customer_id: str):
       - カーリルのemailが未検証の場合、どうするかは最後に調整
    - `client_reference_id`にCUIDを設定
 
-2. **再購入時**:
+2. **再購入・プラン変更時**:
    - 保存済みの`stripe_customer_id`を`customer`パラメータに設定
-   - 既存の顧客情報を再利用
+   - Stripeが自動的に適切な処理を実行：
+     - **アクティブな場合**: プラン変更として処理
+     - **解約予約中の場合**: 解約をキャンセルして新プランに変更
+     - **期間終了済みの場合**: 新規サブスクリプション作成
+
+### 再購入処理の実装
+
+**シンプルな実装方針**（Stripeの自動処理を活用）:
+
+```python
+async def create_checkout_session(cuid: str, price_id: str):
+    """Checkout Session作成（新規購入・再購入・プラン変更を統一処理）"""
+    # 既存のサブスクリプション情報を取得
+    existing = await get_subscription_by_cuid(cuid)
+
+    session_params = {
+        'mode': 'subscription',
+        'line_items': [{'price': price_id, 'quantity': 1}],
+        'success_url': 'https://calil.jp/subscription/success',
+        'cancel_url': 'https://calil.jp/subscription',
+    }
+
+    if existing and existing.stripe_customer_id:
+        # 既存顧客：Stripeが状態に応じて適切に処理
+        session_params['customer'] = existing.stripe_customer_id
+    else:
+        # 新規顧客
+        session_params['customer_creation'] = 'always'
+        session_params['client_reference_id'] = cuid
+
+    # Stripeに処理を委ねる
+    return stripe.checkout.Session.create(**session_params)
+```
+
+**メリット**:
+
+- コードがシンプルで保守しやすい
+- Stripeの標準機能を最大限活用
+- 複雑な状態管理が不要
+- エッジケースもStripeが適切に処理
+
+**UI上の配慮**:
+
+- プラン選択画面に「既にプランをご利用中の場合は、プラン変更となります」等の注意書きを表示
+- Customer Portalへのリンクを別途用意（サブスクリプション管理用）
 
 ## 初回購入フローの詳細
 
@@ -432,9 +476,9 @@ sequenceDiagram
         CW->>CW: plan_id = "Basic" (Datastore更新)
         CW-->>S: 更新完了
 
-        Note over S: SendGridメール送信（非同期）
-        S->>S: SendGrid API呼び出し<br/>新規購読確認メール送信
-        S-->>ST: HTTP 200 OK
+        Note over S: メール送信（BackgroundTask）
+        S->>S: background_tasks.add_task()<br/>新規購読確認メール送信を登録
+        S-->>ST: HTTP 200 OK（メール送信完了を待たずに返す）
     else API呼び出し失敗
         CW-->>S: エラー応答
         S-->>ST: HTTP 500 (Stripeが自動リトライ)
@@ -464,7 +508,6 @@ sequenceDiagram
 - `customer.subscription.deleted`: サブスクリプション削除 → 解約確認メール送信
 - `invoice.payment_succeeded`: 更新決済成功
 - `invoice.payment_failed`: 支払い失敗
-
 
 ## メール通知機能
 
@@ -559,6 +602,7 @@ async def stripe_webhook(
 ```
 
 **選定理由**:
+
 - FastAPIの標準機能で追加依存関係不要
 - Webhook応答時間を短縮（Stripeのタイムアウト対策）
 - メール送信失敗がWebhook処理に影響しない
