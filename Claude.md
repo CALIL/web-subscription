@@ -145,7 +145,7 @@ SENDGRID_TEMPLATE_ID_SUBSCRIPTION_CANCELED=d-xxx   # 解約用テンプレート
 
     # サブスクリプション情報
     'plan_name': str,                 # Basic/Standard/Pro
-    'plan_amount': int,               # 1000/2000/5000
+    'plan_amount': int,               # 1000/2000/5000（円）
     'subscription_status': str,       # active/canceled/past_due等
                                       # ステータスの詳細: https://docs.stripe.com/billing/subscriptions/overview?locale=ja-JP
 
@@ -164,12 +164,21 @@ SENDGRID_TEMPLATE_ID_SUBSCRIPTION_CANCELED=d-xxx   # 解約用テンプレート
 
 ## エンドポイント
 
+### FastAPIエンドポイント
+
 `app/main.py`に実装するエンドポイント：
 - `GET /subscription` - プラン選択画面
 - `POST /subscription/create-checkout-session` - Checkout Session作成
 - `POST /subscription/stripe-webhook` - Webhook受信
 - `POST /subscription/create-portal-session` - Customer Portal URL生成
 - `GET /subscription/success` - 購入完了画面
+
+### Reverse Proxy設定
+
+**nginx設定**: `calil.jp/subscription/*`へのリクエストをCloud Runのweb-subscriptionサービスにプロキシ
+- [web-proxy（nginx）](https://github.com/CALIL/web-proxy/)で設定
+- Cloud RunサービスURL: `https://web-subscription-xxxxx.run.app`
+- パスはそのまま転送（`/subscription`プレフィックスを維持）
 
 ## ユーザー認証とセッション管理
 
@@ -329,6 +338,36 @@ class CalilWebAPIClient:
             return response.json()
 ```
 
+## Stripe Customer Portal
+
+### 概要
+Customer PortalはStripeが提供するホスト型の顧客管理画面で、以下の機能を提供：
+- サブスクリプションの確認
+- プラン変更（アップグレード/ダウングレード）
+- 支払い方法の更新
+- 請求書の確認・ダウンロード
+- サブスクリプションの解約
+
+### Portal URL生成フロー
+1. **エンドポイント呼び出し**: `POST /subscription/create-portal-session`
+2. **Stripe API**: `stripe.billing_portal.Session.create()`でセッション作成
+3. **一時URL生成**: `https://billing.stripe.com/p/session/xxx`形式のURLを取得
+4. **リダイレクト**: ユーザーをStripeのPortalページへリダイレクト
+5. **戻り先**: 操作完了後は`https://calil.jp/subscription`へ自動リダイレクト
+
+### 実装例
+```python
+async def create_portal_session(stripe_customer_id: str):
+    """Customer Portal URLを生成"""
+    session = stripe.billing_portal.Session.create(
+        customer=stripe_customer_id,
+        return_url="https://calil.jp/subscription"
+    )
+    return {"url": session.url}  # Stripe上のPortal URL
+```
+
+**注意**: Portal URLは一時的なもので、生成から24時間有効。ユーザー認証後に都度生成する必要がある。
+
 ## Stripe顧客管理
 
 ### 顧客IDの管理方針
@@ -410,7 +449,7 @@ sequenceDiagram
 
 ### フロー補足説明
 
-1. **プラン選択**: calil.jp/subscriptionでプラン選択ページを表示（reverse-proxy経由）
+1. **プラン選択**: calil.jp/subscriptionでプラン選択ページを表示（nginxのreverse-proxy経由でCloud Runへ）
 2. **Checkout Session作成**: FastAPI APIがStripeのCheckout Sessionを作成し、顧客情報を紐付け
 3. **支払い処理**: ユーザーがStripeのチェックアウト画面でカード情報を入力
 4. **Webhook処理**: 決済成功後、StripeからWebhookを受信してデータベース更新、CalilWebのUserStatも更新
@@ -475,9 +514,9 @@ sequenceDiagram
 {
   "user_name": "ユーザー名",
   "plan_name": "プラン名（Basic/Standard/Pro）",
-  "plan_amount": "月額料金",
+  "plan_amount": "月額料金（円）",
   "next_billing_date": "次回請求日",
-  "customer_portal_url": "Customer PortalのURL",
+  "customer_portal_url": "Customer PortalのURL（Stripe上の管理画面）",
   "old_plan_name": "変更前プラン名",
   "new_plan_name": "変更後プラン名",
   "proration_amount": "日割り差額",
