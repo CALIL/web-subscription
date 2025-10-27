@@ -239,15 +239,8 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 - `nickname`: ユーザー表示名
 - `plan_id`: 現在のプラン（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
-## CalilWeb側で必要な実装
 
-### UserStatモデルへの追加（CalilWebリポジトリ側）
-
-既存の[CalilWeb](https://github.com/CALIL/CalilWeb)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
-
-- `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
-
-#### プラン更新API: infrastructure/update_user_plan
+#### プラン更新API
 
 **エンドポイント**: `POST https://calil.jp/infrastructure/update_user_plan`
 **認証**: Google IAM認証
