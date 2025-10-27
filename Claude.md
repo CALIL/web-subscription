@@ -365,13 +365,6 @@ async def create_checkout_session(cuid: str, price_id: str):
     return stripe.checkout.Session.create(**session_params)
 ```
 
-**メリット**:
-
-- コードがシンプルで保守しやすい
-- Stripeの標準機能を最大限活用
-- 複雑な状態管理が不要
-- エッジケースもStripeが適切に処理
-
 **UI上の配慮**:
 
 - プラン選択画面に「既にプランをご利用中の場合は、プラン変更となります」等の注意書きを表示
@@ -542,22 +535,6 @@ class AppException(HTTPException):
 | `user_not_found` | 404 | ユーザー未登録 | CalilWeb API |
 | `payment_required` | 402 | 決済が必要 | 支払い失敗 |
 | `internal_error` | 500 | 内部エラー | 予期しないエラー |
-
-#### 使用例
-
-```python
-# エラーを投げる
-raise AppException(
-    status_code=400,
-    detail="既に有効なサブスクリプションが存在します。プラン変更はCustomer Portalから行ってください。",
-    error_code="subscription_already_exists"
-)
-
-# レスポンス
-{
-  "detail": "既に有効なサブスクリプションが存在します。プラン変更はCustomer Portalから行ってください。"
-}
-```
 
 ## 品質指標
 
