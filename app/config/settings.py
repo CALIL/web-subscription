@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     stripe_price_id_standard: str = os.getenv('STRIPE_PRICE_ID_STANDARD', '')
     stripe_price_id_pro: str = os.getenv('STRIPE_PRICE_ID_PRO', '')
 
+    # SendGrid設定
+    sendgrid_api_key: str = os.getenv('SENDGRID_API_KEY', '')
+    sendgrid_from_email: str = os.getenv('SENDGRID_FROM_EMAIL', '')
+    sendgrid_from_name: str = os.getenv('SENDGRID_FROM_NAME', '')
+
+    # SendGridテンプレートID
+    sendgrid_template_id_subscription_new: str = os.getenv('SENDGRID_TEMPLATE_ID_SUBSCRIPTION_NEW', '')
+    sendgrid_template_id_subscription_upgrade: str = os.getenv('SENDGRID_TEMPLATE_ID_SUBSCRIPTION_UPGRADE', '')
+    sendgrid_template_id_subscription_downgrade: str = os.getenv('SENDGRID_TEMPLATE_ID_SUBSCRIPTION_DOWNGRADE', '')
+    sendgrid_template_id_subscription_canceled: str = os.getenv('SENDGRID_TEMPLATE_ID_SUBSCRIPTION_CANCELED', '')
+
     @property
     def is_production(self) -> bool:
         '''本番環境かどうか'''
