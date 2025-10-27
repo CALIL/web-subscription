@@ -709,7 +709,7 @@ async def send_email(to_email: str, template_id: str, template_data: dict):
    - テストカードで決済フロー確認
 
 5. **Cloud Runへのデプロイ**
-   - Cloud Run設定・本番環境変数設定（SendGrid APIキー含む）
+   - GitHub Actionsで自動デプロイ（リリース作成時）
    - Stripe Webhook URL登録（https://web-subscription-xxxxx.run.app/subscription/stripe-webhook）
 
 ## セキュリティ考慮事項
@@ -775,9 +775,30 @@ async def send_email(to_email: str, template_id: str, template_data: dict):
 
 **設計思想**: Stripeの堅牢なリトライメカニズムを最大限活用し、複雑な同期バッチや手動修正の仕組みは実装しない。これにより、システムがシンプルになり保守性が向上する。
 
+## デプロイ
+
+### GitHub Actions自動デプロイ
+
+GitHubでリリースを作成すると自動的にCloud Runへデプロイされます。
+
+#### デプロイフロー
+1. GitHubでリリースタグを作成（例: v1.0.0）
+2. GitHub Actionsが自動起動（.github/workflows/deploy.yml）
+3. Dockerイメージをビルド・プッシュ
+4. Cloud Runへデプロイ（APP_ENV=productionを自動設定）
+
+#### 必要なGitHub Secrets
+- `GCP_SA_KEY`: Cloud Runデプロイ用サービスアカウントのJSON鍵
+
+#### デプロイ先
+- **プロジェクト**: libmuteki2
+- **サービス名**: web-subscription
+- **リージョン**: asia-northeast1
+- **URL**: https://web-subscription-xxxxx.run.app
+
 ## 注意事項
 
-- 本番環境では `APP_ENV=production` を必ず設定（APIドキュメント無効化）
+- 本番環境では `APP_ENV=production` を自動設定（GitHub Actions経由）
 - Windows環境では `127.0.0.1` を使用（`0.0.0.0` は避ける）
 - Firestoreモックファイル（`tests/firestore_mock.py`）はテスト用ファイルとして`tests`フォルダに配置
 
