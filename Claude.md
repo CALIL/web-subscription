@@ -39,6 +39,10 @@
 - **パッケージ管理**: uv 0.6.10+
 - **テスト**: pytest, mypy (型安全性100%達成)
 - **メール送信**: SendGrid（トランザクションメール）
+- **HTMLテンプレート**: Jinja2テンプレート（pricing.html、success.html）
+- **セキュリティ**: Webhook署名検証、CSRF保護、XSS対策（Jinja2自動エスケープ）
+- **認証**: Cookie（session_v2）でユーザー認証
+
 
 ## プロジェクト構造
 
@@ -69,7 +73,6 @@ web-subscription/
 └── .github/workflows/          # CI/CD設定
 ```
 
-
 ## 開発コマンド
 
 ```bash
@@ -97,56 +100,13 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 
 ## 環境変数
 
-### 設計方針
-- **ローカル開発でも本番（Cloud Run）に近い構成で動作**させる
-- モックは使用せず、実際のサービス（テストモード）を使用
-- 環境による差異は最小限に抑える
+### 主要設定
 
-### 環境変数設定
-
-```bash
-# 環境識別
-APP_ENV=development                       # development（ローカル）/production（Cloud Run）
-
-# Google Cloud設定
-GOOGLE_CLOUD_PROJECT=web-subscription-dev # プロジェクトID（ローカル開発用）
-FIRESTORE_DATABASE_NAME=(default)         # Firestoreデータベース名
-FIRESTORE_EMULATOR_HOST=localhost:8080    # ローカル開発時：エミュレータ使用
-
-# CalilWeb API設定
-CALIL_WEB_AUDIENCE=https://libmuteki2.appspot.com  # IAM認証のAudience
-CALIL_WEB_BASE_URL=https://calil.jp/infrastructure # APIベースURL
-
-# Stripe設定（ローカル開発：sk_test_xxx、Cloud Run本番：sk_live_xxx）
-STRIPE_SECRET_KEY=sk_test_xxx
-STRIPE_WEBHOOK_SECRET=whsec_xxx
-STRIPE_PUBLISHABLE_KEY=pk_test_xxx
-STRIPE_PRICE_ID_BASIC=price_xxx        # 月額1,000円プラン
-STRIPE_PRICE_ID_STANDARD=price_xxx     # 月額2,000円プラン
-STRIPE_PRICE_ID_PRO=price_xxx          # 月額5,000円プラン
-
-# SendGrid設定（実際のAPIを使用）
-SENDGRID_API_KEY=SG.xxx                            # SendGrid APIキー
-SENDGRID_FROM_EMAIL=noreply@calil.jp               # 送信元メールアドレス
-SENDGRID_FROM_NAME=カーリル                        # 送信者名
-SENDGRID_TEMPLATE_ID_SUBSCRIPTION_NEW=d-xxx        # 新規購読用テンプレートID
-SENDGRID_TEMPLATE_ID_SUBSCRIPTION_UPGRADE=d-xxx    # アップグレード用テンプレートID
-SENDGRID_TEMPLATE_ID_SUBSCRIPTION_DOWNGRADE=d-xxx  # ダウングレード用テンプレートID
-SENDGRID_TEMPLATE_ID_SUBSCRIPTION_CANCELED=d-xxx   # 解約用テンプレートID
-```
-
-### ローカル開発環境の構築
-
-```bash
-# Firestoreエミュレータの起動（ローカル開発時）
-gcloud emulators firestore start --host-port=localhost:8080
-
-# 環境変数の設定
-export FIRESTORE_EMULATOR_HOST=localhost:8080
-
-# ローカルサーバーの起動
-uv run uvicorn app.main:app --reload --port 5000
-```
+- **APP_ENV**: `development`（ローカル）/ `production`（Cloud Run）
+- **Google Cloud**: プロジェクトID、Firestoreデータベース名、エミュレータホスト
+- **CalilWeb API**: IAM認証Audience、APIベースURL
+- **Stripe**: シークレットキー、Webhookシークレット、価格ID（Basic/Standard/Pro）
+- **SendGrid**: APIキー、送信元情報、テンプレートID（購読/変更/解約）
 
 ### 環境別の違い
 
@@ -224,28 +184,8 @@ uv run uvicorn app.main:app --reload --port 5000
 - **Cookieベース認証**: `session_v2`トークンをCookieから取得
 - **毎回API検証**: CalilWeb APIで都度ユーザー情報を取得（キャッシュなし）
 - **Dependency Injection**: FastAPIの依存性注入で実装
-
-```python
-# app/core/auth.py での実装
-async def get_current_user_optional(request: Request) -> Optional[dict]:
-    """認証オプショナル（未ログインでも続行可）"""
-    session_v2 = request.cookies.get("session_v2")
-    if not session_v2:
-        return None
-
-    try:
-        user_info = await calil_api.get_user_info(session_v2)
-        return user_info if user_info.get('stat') == 'ok' else None
-    except:
-        return None
-
-async def get_current_user_required(request: Request) -> dict:
-    """認証必須（未ログインは401エラー）"""
-    user = await get_current_user_optional(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="ログインが必要です")
-    return user
-```
+- **認証オプショナル**: 未ログインでも続行可能なエンドポイント用
+- **認証必須**: ログインが必要なエンドポイント用（401エラー）
 
 ### エンドポイント別認証要件
 
@@ -364,57 +304,6 @@ async def get_current_user_required(request: Request) -> dict:
 - 400: リクエストボディが不正またはplan_idが無効
 - 500: データベース更新エラー
 
-### IAM認証実装例
-
-**PythonでのCalilWeb API呼び出し例**:
-
-```python
-import httpx
-from google.auth.transport.requests import Request
-from google.oauth2 import id_token
-import google.auth
-
-class CalilWebAPIClient:
-    """CalilWeb API (IAM認証) クライアント"""
-
-    def __init__(self, audience: str = "https://libmuteki2.appspot.com"):
-        self.audience = audience
-        self.base_url = "https://calil.jp/infrastructure"
-
-    def _get_id_token(self) -> str:
-        """Google IAM IDトークンの取得"""
-        credentials, project = google.auth.default()
-        auth_req = Request()
-        return id_token.fetch_id_token(auth_req, self.audience)
-
-    async def get_user_info(self, session_v2: str) -> dict:
-        """ユーザー情報取得 (get_userstat_v2)"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/get_userstat_v2",
-                headers={
-                    'Authorization': f'Bearer {self._get_id_token()}',
-                    'Content-Type': 'application/json'
-                },
-                json={'session_v2': session_v2}
-            )
-            response.raise_for_status()
-            return response.json()
-
-    async def update_user_plan(self, cuid: str, plan_id: str) -> dict:
-        """ユーザープラン更新"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/update_user_plan",
-                headers={
-                    'Authorization': f'Bearer {self._get_id_token()}',
-                    'Content-Type': 'application/json'
-                },
-                json={'cuid': cuid, 'plan_id': plan_id}
-            )
-            response.raise_for_status()
-            return response.json()
-```
 
 ## Stripe Customer Portal
 
@@ -589,141 +478,18 @@ sequenceDiagram
 
 ## メール通知機能
 
-### SendGridメール送信サービス
+### 送信するメール
 
-**実装場所**: `app/core/email_service.py`
+1. **新規購読確認メール** - `checkout.session.completed`イベント時
+2. **プランアップグレード通知** - `customer.subscription.updated`（アップグレード時）
+3. **プランダウングレード予約通知** - `customer.subscription.updated`（ダウングレード時）
+4. **解約確認メール** - `customer.subscription.deleted`イベント時
 
-#### 送信するメールの種類と内容
+### 実装方針
 
-1. **新規購読確認メール**（`send_subscription_confirmation`）
-   - トリガー: `checkout.session.completed`イベント
-   - 内容:
-     - プラン名、月額料金
-     - 次回請求日
-     - Customer Portalへのリンク
-     - サポート連絡先
-
-2. **プランアップグレード通知**（`send_plan_upgrade_notification`）
-   - トリガー: `customer.subscription.updated`（アップグレード時）
-   - 内容:
-     - 変更前後のプラン名
-     - 料金の差額（日割り計算）
-     - 即時適用の旨
-     - Customer Portalへのリンク
-
-3. **プランダウングレード予約通知**（`send_plan_downgrade_notification`）
-   - トリガー: `customer.subscription.updated`（ダウングレード時）
-   - 内容:
-     - 変更前後のプラン名
-     - 変更適用日（次回請求日）
-     - 現在のプランは期間終了まで利用可能
-     - Customer Portalへのリンク
-
-4. **解約確認メール**（`send_cancellation_confirmation`）
-   - トリガー: `customer.subscription.deleted`
-   - 内容:
-     - 解約したプラン名
-     - 利用可能期限
-     - 再購読の案内
-     - フィードバックフォームへのリンク
-
-#### SendGridテンプレート変数
-
-各テンプレートで使用する動的変数:
-
-```json
-{
-  "user_name": "ユーザー名",
-  "plan_name": "プラン名（Basic/Standard/Pro）",
-  "plan_amount": "月額料金（円）",
-  "next_billing_date": "次回請求日",
-  "customer_portal_url": "Customer PortalのURL（Stripe上の管理画面）",
-  "old_plan_name": "変更前プラン名",
-  "new_plan_name": "変更後プラン名",
-  "proration_amount": "日割り差額",
-  "effective_date": "変更適用日",
-  "expiry_date": "利用期限日"
-}
-```
-
-#### 非同期実装方法
-
-**FastAPIのBackgroundTasksを使用**（推奨）:
-
-```python
-from fastapi import BackgroundTasks
-
-@app.post("/subscription/stripe-webhook")
-async def stripe_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks
-):
-    # Webhook署名検証
-    event = stripe.Webhook.construct_event(...)
-
-    # データベース更新（同期的に実行）
-    subscription = await update_subscription(...)
-
-    # メール送信をバックグラウンドタスクとして登録
-    if event.type == "checkout.session.completed":
-        background_tasks.add_task(
-            email_service.send_subscription_confirmation,
-            email=subscription.email,
-            user_name=subscription.user_name,
-            plan_name=subscription.plan_name,
-            next_billing_date=subscription.current_period_end,
-            customer_portal_url=await generate_portal_url(subscription.stripe_customer_id)
-        )
-
-    # Stripeにすぐに200を返す（メール送信完了を待たない）
-    return {"status": "success"}
-```
-
-**選定理由**:
-
-- FastAPIの標準機能で追加依存関係不要
-- Webhook応答時間を短縮（Stripeのタイムアウト対策）
-- メール送信失敗がWebhook処理に影響しない
-- 実装がシンプルで保守しやすい
-
-#### 開発環境での安全策
-
-```python
-# app/core/email_service.py
-async def send_email(to_email: str, template_id: str, template_data: dict):
-    """メール送信（開発環境では送信先を開発者に固定）"""
-
-    # 開発環境では送信先を固定（誤送信防止）
-    if settings.is_development:
-        original_to = to_email
-        to_email = "developer@calil.jp"  # 開発者のメール
-        logger.info(f"Dev mode: redirecting email from {original_to} to {to_email}")
-
-        # テンプレートデータに元の宛先を追加
-        template_data['dev_original_recipient'] = original_to
-
-    # SendGrid APIで送信
-    message = Mail(
-        from_email=settings.sendgrid_from_email,
-        to_emails=to_email,
-        subject=None,  # テンプレートで定義
-    )
-    message.template_id = template_id
-    message.dynamic_template_data = template_data
-
-    try:
-        sendgrid_client.send(message)
-    except Exception as e:
-        logger.error(f"Failed to send email: {e}")
-        # エラーでもWebhook処理は継続
-```
-
-#### エラーハンドリング
-
-- SendGrid API呼び出し失敗時はログに記録するが、Webhook処理は継続
-- メール送信失敗でも決済処理には影響しない
-- BackgroundTask内でのエラーは個別にtry/exceptで処理
-- 重要度に応じてSentryでアラート（将来実装）
+- **非同期送信**: FastAPIのBackgroundTasksでWebhook応答を遅延させない
+- **開発環境対策**: 送信先を開発者メールに固定（誤送信防止）
+- **エラー処理**: SendGrid失敗でもWebhook処理は継続
 
 ## 実装手順
 
@@ -753,59 +519,6 @@ async def send_email(to_email: str, template_id: str, template_data: dict):
    - GitHub Actionsで自動デプロイ（リリース作成時）
    - Stripe Webhook URL登録（https://web-subscription-xxxxx.run.app/subscription/stripe-webhook）
 
-## HTMLテンプレート
-
-### 実装方針
-
-FastAPIのJinja2テンプレートを使用してサーバーサイドレンダリングを行います。
-
-### テンプレート構成
-
-#### app/templates/pricing.html
-
-**プラン選択画面**
-
-- 3つのプラン（Basic/Standard/Pro）を表示
-- 現在のプラン状態を表示（利用中/未契約）
-- 各プランにPOSTフォームを設置（price_idを送信）
-- Customer Portalへのリンク表示（既存契約者向け）
-
-#### app/templates/success.html
-
-**購入完了画面**
-
-- 購入したプラン名を表示
-- 次回請求日を表示
-- Customer Portalへのリンク
-- ホームへの戻りリンク
-
-### FastAPI統合
-
-```python
-from fastapi.templating import Jinja2Templates
-
-templates = Jinja2Templates(directory="app/templates")
-```
-
-### テンプレート変数
-
-**pricing.html**:
-
-- `current_plan`: 現在のプラン名（Basic/Standard/Pro/なし）
-- `price_ids`: 各プランの価格ID（Stripe Price ID）
-- `user_name`: ユーザー名（表示用）
-
-**success.html**:
-
-- `plan_name`: 購入したプラン名
-- `next_billing_date`: 次回請求日
-- `amount`: 月額料金
-
-### セキュリティ考慮事項
-
-- CSRFトークン: FastAPIのミドルウェアで処理
-- XSS対策: Jinja2の自動エスケープを利用
-- 認証: Cookie（session_v2）でユーザー認証
 
 ## エラーハンドリング
 
