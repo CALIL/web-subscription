@@ -100,13 +100,9 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 
 ## 環境変数
 
-### 主要設定
+.envに記述し、設定する
 
 - **APP_ENV**: `development`（ローカル）/ `production`（Cloud Run）
-- **Google Cloud**: プロジェクトID、Firestoreデータベース名、エミュレータホスト
-- **CalilWeb API**: IAM認証Audience、APIベースURL
-- **Stripe**: シークレットキー、Webhookシークレット、価格ID（Basic/Standard/Pro）
-- **SendGrid**: APIキー、送信元情報、テンプレートID（購読/変更/解約）
 
 ### 環境別の違い
 
