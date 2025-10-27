@@ -60,8 +60,6 @@ web-subscription/
 │   └── templates/
 │       ├── pricing.html        # プラン選択画面
 │       └── success.html        # 購入完了画面
-├── scripts/
-│   └── sync_checker.py         # 日次同期チェックバッチ
 ├── tests/
 │   ├── conftest.py
 │   ├── test_email_service.py   # メール送信テスト
@@ -514,18 +512,13 @@ sequenceDiagram
    - CalilWeb API連携（`app/infrastructure/CalilWeb_api.py`）
    - メール送信処理の統合（各イベントで適切なメールテンプレートを使用）
 
-4. **監視バッチ実装**
-   - `scripts/sync_checker.py` - 日次同期チェック
-   - Cloud Schedulerでの定期実行設定
-
-5. **テスト**
+4. **テスト**
    - `stripe listen --forward-to localhost:5000/subscription/stripe-webhook`
    - テストカードで決済フロー確認
 
-6. **デプロイ**
-   - Cloud Run設定・環境変数設定
+5. **デプロイ**
+   - Cloud Run設定・環境変数設定（SendGrid APIキー含む）
    - Webhook URL登録
-   - Cloud Schedulerジョブ作成
 
 ## セキュリティ考慮事項
 
@@ -568,22 +561,26 @@ sequenceDiagram
 
 ### データ整合性
 
-- **重要な制約**: CalilWeb（Cloud Datastore）とweb-subscription（Cloud Firestore）は異なるデータベースのため、トランザクションによる同時更新は不可
-- **整合性保証の方針**:
-  1. **順次更新**: Webhook受信時に以下の順序で更新
-     - 先にFirestoreのUserSubscriptionを更新
-     - 成功したらCalilWeb APIを呼び出してUserStatを更新
-     - UserStat更新が失敗した場合は、Stripeに500エラーを返してリトライを促す
-  2. **冪等性の確保**:
-     - UserSubscriptionの`updated`フィールドとStripeイベントのタイムスタンプを比較
-     - 同じイベントIDの重複処理を防ぐ
-  3. **リトライメカニズム**:
-     - Stripeの自動リトライ（最大72時間）を活用
-     - CalilWeb API呼び出し失敗時は内部で3回までリトライ
-  4. **監視とアラート**:
-     - 不整合検出時はSentryで通知
-     - 日次バッチで両システムの同期状態を確認（`scripts/sync_checker.py`）
-     - 不整合があれば手動修正またはバッチ修正
+- **基本方針**: シンプルかつ確実な整合性保証
+- **制約**: CalilWeb（Cloud Datastore）とFirestore間はトランザクション不可のため順次更新
+
+#### 整合性保証の仕組み
+
+1. **順次更新とリトライ**:
+   - Firestore（UserSubscription）を先に更新
+   - CalilWeb API（UserStat）を後から更新
+   - CalilWeb API失敗時は内部で3回リトライ
+   - それでも失敗したらHTTP 500を返してStripeの自動リトライ（最大72時間）に任せる
+
+2. **冪等性の確保**:
+   - Firestoreの`processed_events`コレクションでイベントIDを記録
+   - 同じイベントIDの重複処理を防止
+
+3. **エラー監視**:
+   - 重要なエラーはSentryで通知（将来実装）
+   - 72時間のリトライでも解決しない場合のみ手動対応
+
+**設計思想**: Stripeの堅牢なリトライメカニズムを最大限活用し、複雑な同期バッチや手動修正の仕組みは実装しない。これにより、システムがシンプルになり保守性が向上する。
 
 
 ## 注意事項
