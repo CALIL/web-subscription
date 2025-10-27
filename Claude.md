@@ -837,6 +837,27 @@ raise AppException(
 
 **設計思想**: Stripeの堅牢なリトライメカニズムを最大限活用し、複雑な同期バッチや手動修正の仕組みは実装しない。これにより、システムがシンプルになり保守性が向上する。
 
+## Dockerfile
+
+### マルチステージビルド構成
+
+uv公式イメージを使用した効率的なビルド：
+
+1. **ビルドステージ**: `ghcr.io/astral-sh/uv:python3.13-bookworm-slim`
+   - uvが組み込まれた公式イメージ
+   - 依存関係の高速インストール
+
+2. **実行ステージ**: `python:3.13-slim-bookworm`
+   - 最小限のPython実行環境
+   - 非rootユーザー（appuser）で実行
+   - ヘルスチェック機能付き
+
+### 環境変数の扱い
+
+- `APP_ENV=production`: Dockerfile内で設定
+- 機密情報（Stripe/SendGridキー等）: Cloud Runデプロイ時に環境変数として注入
+- `.env`ファイルは使用しない（セキュリティのため）
+
 ## デプロイ
 
 ### GitHub Actions自動デプロイ
@@ -844,6 +865,7 @@ raise AppException(
 GitHubでリリースを作成すると自動的にCloud Runへデプロイされます。
 
 #### デプロイフロー
+
 1. GitHubでリリースタグを作成（例: v1.0.0）
 2. GitHub Actionsが自動起動（.github/workflows/deploy.yml）
 3. Dockerイメージをビルド・プッシュ
