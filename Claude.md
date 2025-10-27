@@ -38,6 +38,7 @@
 - **データベース**: Google Cloud Firestore (ネイティブモード)
 - **パッケージ管理**: uv 0.6.10+
 - **テスト**: pytest, mypy (型安全性100%達成)
+- **メール送信**: SendGrid（トランザクションメール）
 
 ## プロジェクト構造
 
@@ -46,9 +47,10 @@ web-subscription/
 ├── app/
 │   ├── main.py                 # FastAPIアプリケーション
 │   ├── config/
-│   │   └── settings.py         # 環境変数、Stripe設定
+│   │   └── settings.py         # 環境変数、Stripe設定、SendGrid設定
 │   ├── core/
 │   │   ├── stripe_service.py   # Stripe操作
+│   │   ├── email_service.py    # SendGridメール送信
 │   │   └── subscription.py     # サブスクリプション管理
 │   ├── infrastructure/
 │   │   ├── firestore.py        # Firestore接続
@@ -62,6 +64,7 @@ web-subscription/
 │   └── sync_checker.py         # 日次同期チェックバッチ
 ├── tests/
 │   ├── conftest.py
+│   ├── test_email_service.py   # メール送信テスト
 │   └── test_*.py
 ├── .env                        # 環境変数（開発環境）
 ├── pyproject.toml              # プロジェクト設定
@@ -110,6 +113,15 @@ STRIPE_PRICE_ID_BASIC=price_xxx        # 月額1,000円プラン
 STRIPE_PRICE_ID_STANDARD=price_xxx     # 月額2,000円プラン
 STRIPE_PRICE_ID_PRO=price_xxx          # 月額5,000円プラン
 STRIPE_PUBLISHABLE_KEY=pk_xxx
+
+# SendGrid設定
+SENDGRID_API_KEY=SG.xxx                            # SendGrid APIキー
+SENDGRID_FROM_EMAIL=noreply@calil.jp               # 送信元メールアドレス
+SENDGRID_FROM_NAME=カーリル                        # 送信者名
+SENDGRID_TEMPLATE_ID_SUBSCRIPTION_NEW=d-xxx        # 新規購読用テンプレートID
+SENDGRID_TEMPLATE_ID_SUBSCRIPTION_UPGRADE=d-xxx    # アップグレード用テンプレートID
+SENDGRID_TEMPLATE_ID_SUBSCRIPTION_DOWNGRADE=d-xxx  # ダウングレード用テンプレートID
+SENDGRID_TEMPLATE_ID_SUBSCRIPTION_CANCELED=d-xxx   # 解約用テンプレートID
 ```
 
 ## データモデル設計
@@ -382,6 +394,9 @@ sequenceDiagram
     alt API呼び出し成功
         CW->>CW: plan_id = "Basic" (Datastore更新)
         CW-->>S: 更新完了
+
+        Note over S: SendGridメール送信（非同期）
+        S->>S: SendGrid API呼び出し<br/>新規購読確認メール送信
         S-->>ST: HTTP 200 OK
     else API呼び出し失敗
         CW-->>S: エラー応答
@@ -407,29 +422,97 @@ sequenceDiagram
 
 ### 処理するイベント
 
-- `checkout.session.completed`: 初回決済完了（顧客IDを保存）
-- `customer.subscription.updated`: サブスクリプション更新
-- `customer.subscription.deleted`: サブスクリプション削除
+- `checkout.session.completed`: 初回決済完了（顧客IDを保存）→ 新規購読確認メール送信
+- `customer.subscription.updated`: サブスクリプション更新 → プラン変更通知メール送信
+- `customer.subscription.deleted`: サブスクリプション削除 → 解約確認メール送信
 - `invoice.payment_succeeded`: 更新決済成功
 - `invoice.payment_failed`: 支払い失敗
 
 
+## メール通知機能
+
+### SendGridメール送信サービス
+
+**実装場所**: `app/core/email_service.py`
+
+#### 送信するメールの種類と内容
+
+1. **新規購読確認メール**（`send_subscription_confirmation`）
+   - トリガー: `checkout.session.completed`イベント
+   - 内容:
+     - プラン名、月額料金
+     - 次回請求日
+     - Customer Portalへのリンク
+     - サポート連絡先
+
+2. **プランアップグレード通知**（`send_plan_upgrade_notification`）
+   - トリガー: `customer.subscription.updated`（アップグレード時）
+   - 内容:
+     - 変更前後のプラン名
+     - 料金の差額（日割り計算）
+     - 即時適用の旨
+     - Customer Portalへのリンク
+
+3. **プランダウングレード予約通知**（`send_plan_downgrade_notification`）
+   - トリガー: `customer.subscription.updated`（ダウングレード時）
+   - 内容:
+     - 変更前後のプラン名
+     - 変更適用日（次回請求日）
+     - 現在のプランは期間終了まで利用可能
+     - Customer Portalへのリンク
+
+4. **解約確認メール**（`send_cancellation_confirmation`）
+   - トリガー: `customer.subscription.deleted`
+   - 内容:
+     - 解約したプラン名
+     - 利用可能期限
+     - 再購読の案内
+     - フィードバックフォームへのリンク
+
+#### SendGridテンプレート変数
+
+各テンプレートで使用する動的変数:
+
+```json
+{
+  "user_name": "ユーザー名",
+  "plan_name": "プラン名（Basic/Standard/Pro）",
+  "plan_amount": "月額料金",
+  "next_billing_date": "次回請求日",
+  "customer_portal_url": "Customer PortalのURL",
+  "old_plan_name": "変更前プラン名",
+  "new_plan_name": "変更後プラン名",
+  "proration_amount": "日割り差額",
+  "effective_date": "変更適用日",
+  "expiry_date": "利用期限日"
+}
+```
+
+#### エラーハンドリング
+
+- SendGrid API呼び出し失敗時はログに記録するが、Webhook処理は継続
+- メール送信失敗でも決済処理には影響しない
+- 重要度に応じてSentryでアラート（将来実装）
+
 ## 実装手順
 
 1. **基盤構築**
-   - `uv init` → `uv add fastapi[standard] google-cloud-firestore stripe python-dotenv`
-   - `.env`ファイル作成（環境変数設定）
+   - `uv init` → `uv add fastapi[standard] google-cloud-firestore stripe python-dotenv sendgrid`
+   - `.env`ファイル作成（環境変数設定、SendGrid設定含む）
    - Firestore有効化
+   - SendGrid APIキー取得とテンプレート作成
 
 2. **コア実装**
    - `app/models/subscription.py` - UserSubscriptionモデル
    - `app/core/stripe_service.py` - Stripe操作ロジック
+   - `app/core/email_service.py` - SendGridメール送信サービス
    - `app/infrastructure/firestore.py` - DB接続
    - `app/main.py` - FastAPIエンドポイント
 
 3. **Webhook処理**
    - 署名検証とイベント処理ハンドラー
    - CalilWeb API連携（`app/infrastructure/CalilWeb_api.py`）
+   - メール送信処理の統合（各イベントで適切なメールテンプレートを使用）
 
 4. **監視バッチ実装**
    - `scripts/sync_checker.py` - 日次同期チェック
