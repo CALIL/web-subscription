@@ -123,8 +123,8 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 
 ### UserSubscription (Cloud Firestore)
 
-**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）
-**実装場所**: `app/models/subscription.py`
+**管理方針**: 1ユーザーにつき1ドキュメント（再購入時は既存ドキュメントを更新）  
+**実装場所**: `app/models/subscription.py`  
 **注意**: CalilWeb（Datastore）とはトランザクション不可のため、順次更新で整合性を保証
 
 **ドキュメントID**: カーリルのCUID（ユーザー識別子）を直接使用
