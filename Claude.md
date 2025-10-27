@@ -240,7 +240,7 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 - `plan_id`: 現在のプラン（'Basic'/'Standard'/'Pro'、未契約は空文字）
 
 
-#### プラン更新API
+### プラン更新API
 
 **エンドポイント**: `POST https://calil.jp/infrastructure/update_user_plan`
 **認証**: Google IAM認証
