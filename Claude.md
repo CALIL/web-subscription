@@ -525,10 +525,50 @@ sequenceDiagram
 }
 ```
 
+#### 非同期実装方法
+
+**FastAPIのBackgroundTasksを使用**（推奨）:
+
+```python
+from fastapi import BackgroundTasks
+
+@app.post("/subscription/stripe-webhook")
+async def stripe_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks
+):
+    # Webhook署名検証
+    event = stripe.Webhook.construct_event(...)
+
+    # データベース更新（同期的に実行）
+    subscription = await update_subscription(...)
+
+    # メール送信をバックグラウンドタスクとして登録
+    if event.type == "checkout.session.completed":
+        background_tasks.add_task(
+            email_service.send_subscription_confirmation,
+            email=subscription.email,
+            user_name=subscription.user_name,
+            plan_name=subscription.plan_name,
+            next_billing_date=subscription.current_period_end,
+            customer_portal_url=await generate_portal_url(subscription.stripe_customer_id)
+        )
+
+    # Stripeにすぐに200を返す（メール送信完了を待たない）
+    return {"status": "success"}
+```
+
+**選定理由**:
+- FastAPIの標準機能で追加依存関係不要
+- Webhook応答時間を短縮（Stripeのタイムアウト対策）
+- メール送信失敗がWebhook処理に影響しない
+- 実装がシンプルで保守しやすい
+
 #### エラーハンドリング
 
 - SendGrid API呼び出し失敗時はログに記録するが、Webhook処理は継続
 - メール送信失敗でも決済処理には影響しない
+- BackgroundTask内でのエラーは個別にtry/exceptで処理
 - 重要度に応じてSentryでアラート（将来実装）
 
 ## 実装手順
