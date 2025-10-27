@@ -712,6 +712,60 @@ async def send_email(to_email: str, template_id: str, template_data: dict):
    - GitHub Actionsで自動デプロイ（リリース作成時）
    - Stripe Webhook URL登録（https://web-subscription-xxxxx.run.app/subscription/stripe-webhook）
 
+## HTMLテンプレート
+
+### 実装方針
+
+FastAPIのJinja2テンプレートを使用してサーバーサイドレンダリングを行います。
+
+### テンプレート構成
+
+#### app/templates/pricing.html
+
+**プラン選択画面**
+
+- 3つのプラン（Basic/Standard/Pro）を表示
+- 現在のプラン状態を表示（利用中/未契約）
+- 各プランにPOSTフォームを設置（price_idを送信）
+- Customer Portalへのリンク表示（既存契約者向け）
+
+#### app/templates/success.html
+
+**購入完了画面**
+
+- 購入したプラン名を表示
+- 次回請求日を表示
+- Customer Portalへのリンク
+- ホームへの戻りリンク
+
+### FastAPI統合
+
+```python
+from fastapi.templating import Jinja2Templates
+
+templates = Jinja2Templates(directory="app/templates")
+```
+
+### テンプレート変数
+
+**pricing.html**:
+
+- `current_plan`: 現在のプラン名（Basic/Standard/Pro/なし）
+- `price_ids`: 各プランの価格ID（Stripe Price ID）
+- `user_name`: ユーザー名（表示用）
+
+**success.html**:
+
+- `plan_name`: 購入したプラン名
+- `next_billing_date`: 次回請求日
+- `amount`: 月額料金
+
+### セキュリティ考慮事項
+
+- CSRFトークン: FastAPIのミドルウェアで処理
+- XSS対策: Jinja2の自動エスケープを利用
+- 認証: Cookie（session_v2）でユーザー認証
+
 ## エラーハンドリング
 
 ### エラーレスポンスフォーマット
