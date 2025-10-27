@@ -244,34 +244,8 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 ### UserStatモデルへの追加（CalilWebリポジトリ側）
 
 既存の[CalilWeb](https://github.com/CALIL/CalilWeb)（Cloud Datastore使用）のUserStatモデルに以下のプロパティを追加
+
 - `plan_id`: StringProperty(default='') - プラン名を格納（'Basic'/'Standard'/'Pro'、未契約は空文字）
-
-### API仕様
-
-#### ユーザー情報取得API: infrastructure/get_userstat_v2
-
-**エンドポイント**: `POST https://calil.jp/infrastructure/get_userstat_v2`
-**認証**: Google IAM認証
-
-**リクエストボディ**:
-
-```json
-{
-  "session_v2": "JWTセッショントークン"
-}
-```
-
-**レスポンス**（plan_idフィールドを含む）:
-
-```json
-{
-  "stat": "ok",
-  "cuid": "4754259718",
-  "plan_id": "Basic",
-  "requested_by": "service-account@project.iam.gserviceaccount.com"
-  // ...その他のユーザー情報フィールド
-}
-```
 
 #### プラン更新API: infrastructure/update_user_plan
 
@@ -299,16 +273,18 @@ uv run python -m pytest tests/ --cov=app --cov-report=term-missing
 ```
 
 **エラーレスポンス**:
+
 - 401: IAM認証失敗
 - 404: 指定されたCUIDのユーザーが存在しない
 - 400: リクエストボディが不正またはplan_idが無効
 - 500: データベース更新エラー
 
-
 ## Stripe Customer Portal
 
 ### 概要
+
 Customer PortalはStripeが提供するホスト型の顧客管理画面で、以下の機能を提供：
+
 - サブスクリプションの確認
 - プラン変更（アップグレード/ダウングレード）
 - 支払い方法の更新
@@ -316,6 +292,7 @@ Customer PortalはStripeが提供するホスト型の顧客管理画面で、�
 - サブスクリプションの解約
 
 ### Portal URL生成フロー
+
 1. **エンドポイント呼び出し**: `POST /subscription/create-portal-session`
 2. **Stripe API**: `stripe.billing_portal.Session.create()`でセッション作成
 3. **一時URL生成**: `https://billing.stripe.com/p/session/xxx`形式のURLを取得
@@ -323,6 +300,7 @@ Customer PortalはStripeが提供するホスト型の顧客管理画面で、�
 5. **戻り先**: 操作完了後は`https://calil.jp/subscription`へ自動リダイレクト
 
 ### 実装例
+
 ```python
 async def create_portal_session(stripe_customer_id: str):
     """Customer Portal URLを生成"""
@@ -517,8 +495,7 @@ sequenceDiagram
 
 5. **Cloud Runへのデプロイ**
    - GitHub Actionsで自動デプロイ（リリース作成時）
-   - Stripe Webhook URL登録（https://web-subscription-xxxxx.run.app/subscription/stripe-webhook）
-
+   - Stripe Webhook URL登録（`https://web-subscription-xxxxx.run.app/subscription/stripe-webhook`）
 
 ## エラーハンドリング
 
@@ -581,14 +558,6 @@ raise AppException(
   "detail": "既に有効なサブスクリプションが存在します。プラン変更はCustomer Portalから行ってください。"
 }
 ```
-
-## セキュリティ考慮事項
-
-- Webhook署名の必須検証
-- CSRF保護の実装
-- ユーザー認証必須
-- APIキーの環境変数管理
-- HTTPSでの通信必須
 
 ## 品質指標
 
