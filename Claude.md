@@ -593,3 +593,90 @@ GitHubでリリースを作成すると自動的にCloud Runへデプロイさ�
 ## 関連ドキュメント
 
 - [Stripe API](https://docs.stripe.com/api)
+
+## 現在の実装状況と今後の計画
+
+### 実装済み（✅）
+
+#### インフラ・設定
+
+- ✅ プロジェクト初期設定（pyproject.toml、依存関係）
+- ✅ 環境変数設定（.env、.env.example）
+- ✅ Dockerfile（マルチステージビルド）
+- ✅ GitHub Actions デプロイワークフロー（deploy.yml）
+
+#### データアクセス層
+
+- ✅ Firestore接続（`app/infrastructure/firestore.py`）
+- ✅ CalilWeb APIクライアント（`app/infrastructure/calil_web_api.py`）
+- ✅ UserSubscriptionモデル（`app/models/subscription.py`）
+- ✅ 設定管理（`app/config/settings.py` - SendGrid設定追加済み）
+
+#### テスト
+
+- ✅ Firestoreモック（`tests/firestore_mock.py`）
+- ✅ CalilWeb APIテスト（18個全パス、カバレッジ96%）
+- ✅ Firestoreテスト
+
+### 未実装（❌）
+
+#### コア機能
+
+- ❌ **app/main.py** - FastAPIアプリケーション本体
+- ❌ **app/core/stripe_service.py** - Stripe操作ロジック
+- ❌ **app/core/email_service.py** - SendGridメール送信
+- ❌ **app/core/auth.py** - 認証処理（session_v2）
+- ❌ **app/core/subscription.py** - サブスクリプション管理ロジック
+- ❌ **app/core/exceptions.py** - カスタム例外クラス
+
+#### HTMLテンプレート
+
+- ❌ **app/templates/pricing.html** - プラン選択画面
+- ❌ **app/templates/success.html** - 購入完了画面
+
+### 実装優先順位
+
+#### フェーズ1: 基本構造（1-2日）
+
+1. `app/main.py` - FastAPIアプリケーション起動
+2. `app/core/auth.py` - 認証処理
+3. `app/core/exceptions.py` - エラーハンドリング
+
+#### フェーズ2: Stripe統合（2-3日）
+
+1. `app/core/stripe_service.py` - Stripe基本操作
+2. `/subscription` エンドポイント（プラン選択画面）
+3. `/subscription/create-checkout-session` エンドポイント
+4. `app/templates/pricing.html` - プラン選択UI
+
+#### フェーズ3: Webhook処理（2-3日）
+
+1. `/subscription/stripe-webhook` エンドポイント
+2. `app/core/subscription.py` - サブスクリプション更新ロジック
+3. CalilWeb APIとの連携処理
+
+#### フェーズ4: メール通知（1-2日）
+
+1. `app/core/email_service.py` - SendGrid統合
+2. BackgroundTasksでの非同期送信
+3. 各イベントに対応したメール送信処理
+
+#### フェーズ5: 完成・最適化（1-2日）
+
+1. `/subscription/success` エンドポイント
+2. `/subscription/create-portal-session` エンドポイント
+3. `app/templates/success.html` - 購入完了画面
+4. エラー処理の強化
+5. ログ設定
+
+### 推定完了時期
+
+- **開発環境での基本動作**: 7-10日
+- **本番デプロイ可能**: 10-12日
+- **全機能完成**: 12-15日
+
+### 次のアクション
+
+1. `app/main.py`の実装から開始
+2. 認証とエラーハンドリングの基盤を構築
+3. Stripeの基本統合を進める
